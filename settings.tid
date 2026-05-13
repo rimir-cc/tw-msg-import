@@ -1,0 +1,36 @@
+title: $:/plugins/rimir/msg-import/settings
+type: text/vnd.tiddlywiki
+
+<div class="rr-settings-section">
+
+!! Behaviour
+
+<$checkbox tiddler="$:/config/rimir/msg-import/llm-summary" field="text" checked="yes" unchecked="no" default="no"> Generate LLM summary after import</$checkbox>
+
+When enabled, the pipeline appends a `.summary` artifact produced by `llm-connect`. Reuses the dropzone/global provider/model unless overridden in the pipeline step. Off by default — every drop otherwise costs tokens.
+
+<$checkbox tiddler="$:/config/rimir/msg-import/quarantine-executables" field="text" checked="yes" unchecked="no" default="yes"> Quarantine executable attachments</$checkbox>
+
+When enabled (default), `.exe`, `.bat`, `.cmd`, `.ps1`, `.vbs`, `.jar`, `.scr`, `.msi` and similar attachments are skipped and listed in the email's `msg-quarantined-attachments` frontmatter field. Disable only if you control the source of incoming mail.
+
+!! Install Checklist
+
+# Create a venv and install `extract-msg`: `python3 -m venv .venv && .venv/bin/pip install -r plugins/rimir/msg-import/scripts/requirements.txt` from the wiki dir (system pip is blocked on Debian/Ubuntu 24.04+ by PEP 668).
+# Ensure `pandoc` is on the server's `PATH`. Same dependency used by `rimir/mgm-tender`.
+# Merge `plugins/rimir/msg-import/runner-actions/msg.json` into `dev-wiki/runner-actions.json` and restart the server (runner-actions are read at boot).
+# Confirm `application/vnd.ms-outlook` appears in `$:/config/rimir/file-upload/media-types` — required for file-upload to accept `.msg` drops. Shipped in file-upload ≥ 0.1.20.
+
+!! Pipeline
+
+```
+<$transclude tiddler="$:/plugins/rimir/msg-import/pipelines/msg" mode="block"/>
+```
+
+!! Security Notes
+
+* The Python extractor asserts the input path resolves to a location under `$TW_WIKI_PATH` (set by the runner action; defaults to the server's cwd, which `pipeline-executor.js` pins to `$tw.boot.wikiPath`).
+* Attachment filenames are sanitized: no traversal, no control chars, ASCII-safe; collisions get a short hash suffix.
+* Pandoc is invoked via stdin, never with a filename argument — no shell interpolation, no `--filter` / `--lua-filter`.
+* The runner plugin still does string-interpolation substitution for params other than `{{input}}` / `{{output}}` (those are auto-quoted by file-pipeline's executor). The two actions this plugin ships use only `{{input}}` and `{{output}}` to stay on the safe path.
+
+</div>

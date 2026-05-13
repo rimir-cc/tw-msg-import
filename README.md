@@ -1,0 +1,41 @@
+# tw-msg-import
+
+Drop Outlook `.msg` files into a TiddlyWiki and get a clean markdown tiddler with YAML frontmatter, plus the attachments as artifact child tiddlers. The original `.msg` blob is preserved as the canonical asset.
+
+## Features
+
+- Drag-and-drop import into any `<$file-dropzone>`.
+- Frontmatter metadata (subject, from, to, cc, bcc, date, message-id, in-reply-to) extracted into YAML fields and round-tripped to disk by `rimir/frontmatter`.
+- Email body converted from HTML to markdown via pandoc (stdin, no shell, no filename arg).
+- Each attachment becomes a child tiddler with `_artifact_source` linking back to the parent `.msg`; rename and delete cascade for free.
+- Inline images preserved: `cid:` references in the body are rewritten to wiki-relative URLs pointing at the saved inline-image files.
+- Optional LLM summary step gated by `$:/config/rimir/msg-import/llm-summary`.
+- Executable attachments (`.exe`, `.bat`, `.ps1`, `.vbs`, `.jar`, etc.) are quarantined by default.
+
+## Prerequisites
+
+- `rimir/file-upload` (≥ 0.1.20 — ships the `application/vnd.ms-outlook` MIME entry and `email/` subfolder routing)
+- `rimir/file-pipeline`
+- `rimir/runner`
+- `rimir/frontmatter`
+- Python 3 with `extract-msg` (`pip install extract-msg`)
+- `pandoc` on `PATH`
+
+## Install
+
+1. Drop the plugin folder under `dev-wiki/plugins/rimir/msg-import/`.
+2. Add `"rimir/msg-import"` to your wiki's `tiddlywiki.info` plugin list.
+3. Merge the two entries from `runner-actions/msg.json` into `dev-wiki/runner-actions.json` (restart required — runner-actions are read at boot).
+4. `pip install -r dev-wiki/plugins/rimir/msg-import/scripts/requirements.txt`.
+
+## Output
+
+For an imported `meeting.msg`, three tiddler groups are created:
+
+- `meeting.msg` — original binary, `type: application/vnd.ms-outlook`
+- `meeting.msg.email` — markdown body, `type: text/x-frontmattered-markdown`
+- `meeting.msg.attachments/<filename>` — one tiddler per attachment
+
+## License
+
+MIT — see `LICENSE.md`.

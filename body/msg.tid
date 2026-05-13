@@ -1,0 +1,25 @@
+title: $:/plugins/rimir/msg-import/body/msg
+type: text/vnd.tiddlywiki
+
+\function thumb-state() [<currentTiddler>addprefix[$:/state/file-upload/view-mode/]]
+
+<$let emailTitle={{{ [<currentTiddler>addsuffix[.email]] }}}>
+
+<!-- Default view: thumbnail tile, click to expand -->
+<$reveal type="nomatch" state=<<thumb-state>> text="full" tag="div" class="fu-thumbnail-wrapper">
+<$button class="fu-thumbnail-click" actions="<$action-setfield $tiddler=<<thumb-state>> text='full'/>">
+<img class="fu-thumbnail-img" src={{!!_thumbnail_uri}} title="Click to show email body"/>
+</$button>
+</$reveal>
+
+<!-- Full view: transclude the .email sibling, with a back-to-thumb button -->
+<$reveal type="match" state=<<thumb-state>> text="full" tag="div" class="fu-full-view rr-msg-full">
+<$button class="tc-btn-invisible rr-msg-collapse" actions="<$action-setfield $tiddler=<<thumb-state>> text='thumb'/>">
+↩ thumb
+</$button>
+<$list filter="[<emailTitle>!is[missing]]" variable="ignore" emptyMessage="//No `.email` artifact found — the msg-import pipeline may not have run.//">
+<$transclude $tiddler=<<emailTitle>> $mode="block"/>
+</$list>
+</$reveal>
+
+</$let>

@@ -1,0 +1,17 @@
+{
+    "msg-thumb": {
+        "command": ".venv/bin/python3 plugins/rimir/msg-import/scripts/extract.py --mode=thumb --input {{input}} --output {{output}} --size {{size}}",
+        "params": ["input", "output", "size"],
+        "description": "Render a small PNG previewing the .msg (subject + sender + date) via ImageMagick caption: layout"
+    },
+    "convert-msg-body": {
+        "command": ".venv/bin/python3 plugins/rimir/msg-import/scripts/extract.py --mode=body --input {{input}} --attach-dir {{output}} --source-uri {{canonical_uri}}",
+        "params": ["input", "output"],
+        "description": "Parse Outlook .msg, write inline images, emit YAML frontmatter + markdown body to stdout"
+    },
+    "extract-msg-attachments": {
+        "command": ".venv/bin/python3 plugins/rimir/msg-import/scripts/extract.py --mode=attachments --input {{input}} --attach-dir {{output}} --source-uri {{canonical_uri}}",
+        "params": ["input", "output"],
+        "description": "Parse Outlook .msg and write non-inline attachments to attach-dir"
+    }
+}

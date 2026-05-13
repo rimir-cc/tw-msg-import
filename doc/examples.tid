@@ -1,0 +1,59 @@
+title: $:/plugins/rimir/msg-import/doc/examples
+tags:
+type: text/vnd.tiddlywiki
+rdt.plugin-name: msg import
+rdt.section: Examples
+rdt.order: 4
+
+! Examples
+
+!! Example: drop a meeting invite
+
+After dropping `kickoff.msg` into a `<$file-dropzone>`, the resulting `kickoff.msg.email` tiddler looks roughly like:
+
+```
+---
+type: text/x-frontmattered-markdown
+msg-subject: "Project Apollo kickoff"
+msg-from: "Alice Smith <alice@example.com>"
+msg-to:
+  - bob@example.com
+  - carol@example.com
+msg-cc: []
+msg-bcc: []
+msg-date: 2026-05-13T08:42:00+00:00
+msg-message-id: <CAJq8...@mail.example.com>
+msg-in-reply-to: ""
+msg-has-attachments: yes
+tags: email
+---
+
+# Project Apollo kickoff
+
+Hi all,
+
+Let's get the kickoff scheduled for next Tuesday. See the attached agenda...
+
+![](/files/email/_derived/kickoff.msg/cid_logo123.png)
+```
+
+The agenda PDF lives at `kickoff.msg.attachments/att_agenda.pdf` with `_artifact_source = kickoff.msg`.
+
+!! Example: enable the LLM summary step
+
+```
+<$action-setfield $tiddler="$:/config/rimir/msg-import/llm-summary" text="yes"/>
+```
+
+Re-drop a message. A new `kickoff.msg.summary` tiddler appears with the LLM-produced digest (TL;DR + decisions + action items + open questions, per `prompts/email-summary.tid`).
+
+!! Example: override the LLM provider per dropzone
+
+```
+<$file-dropzone pipeline="auto"
+  prop-system-prompt="$:/my/custom-system-prompt"
+  prop-provider="anthropic"
+  prop-model="claude-opus-4-7"/>
+```
+
+The three `prop-*` attributes are passed through file-pipeline's client to the LLM step. They take precedence over llm-connect's global defaults but lose to step-level fields set in the pipeline tiddler.

@@ -1,0 +1,71 @@
+title: $:/plugins/rimir/msg-import/doc/reference
+tags:
+type: text/vnd.tiddlywiki
+rdt.plugin-name: msg import
+rdt.section: Reference
+rdt.order: 6
+
+! Reference
+
+!! Frontmatter fields produced
+
+| !Field | !Type | !Notes |
+| `type` | string | Always `text/x-frontmattered-markdown` — drives the frontmatter deserializer |
+| `msg-subject` | string | Empty when the email has no subject |
+| `msg-from` | string | Display form (`Name <addr@x>`) when available, otherwise the raw address |
+| `msg-to` | YAML list | One scalar per recipient — split on `,` and `;` |
+| `msg-cc` | YAML list | Same as to-list; empty list when none |
+| `msg-bcc` | YAML list | Same as to-list; usually empty for received mail |
+| `msg-date` | ISO-8601 | UTC; falls back to `parsedDate` when `date` is missing |
+| `msg-message-id` | string | `<…@server>` form; empty if not present |
+| `msg-in-reply-to` | string | Same shape as message-id; empty for top-level messages |
+| `msg-has-attachments` | yes/no | Includes inline images |
+| `msg-quarantined-attachments` | YAML list | Only present when at least one attachment was blocked |
+| `tags` | string | Single tag `email` for filtering |
+
+!! Pipeline step reference
+
+| !Step | !Type | !Output | !Artifact |
+| `convert` | command | stdout (captureStdout) | `.email` of `text/x-frontmattered-markdown` |
+| `attachments` | command | scanDir of `_derived/<basename>/` filtered by `att_` prefix | `.attachments/<filename>` of `attachment` type |
+| `summary` | llm (auto) | LLM response text | `.summary` of `text/x-markdown` — only when `$:/config/rimir/msg-import/llm-summary == yes` |
+
+!! Runner actions
+
+```json
+{
+  "convert-msg-body": {
+    "command": ".venv/bin/python3 plugins/rimir/msg-import/scripts/extract.py --mode=body --input {{input}} --attach-dir {{output}} --source-uri {{canonical_uri}}",
+    "params": ["input", "output"]
+  },
+  "extract-msg-attachments": {
+    "command": ".venv/bin/python3 plugins/rimir/msg-import/scripts/extract.py --mode=attachments --input {{input}} --attach-dir {{output}} --source-uri {{canonical_uri}}",
+    "params": ["input", "output"]
+  }
+}
+```
+
+`.venv/bin/python3` resolves relative to `$tw.boot.wikiPath` (the runner's cwd), i.e. `dev-wiki/.venv/`. Replace with system `python3` if your install puts `extract-msg` system-wide instead.
+
+`{{canonical_uri}}` is a built-in template variable added by file-pipeline 0.1.9 alongside `{{input}}` and `{{output}}` — it resolves to the parent tiddler's `_canonical_uri`. The extractor uses it to compute served URLs for inline images and attachments, so the same pipeline works across any file-upload location (default `/files/`, orga-apps' `/work/`, custom locations).
+
+`{{input}}` and `{{output}}` are auto-quoted by `pipeline-executor.js` — no further escaping is needed. Other params are NOT auto-quoted by the runner; this plugin avoids using them.
+
+!! Config tiddlers
+
+| !Tiddler | !Default | !Effect |
+| `$:/config/rimir/msg-import/llm-summary` | `no` | Enable the `.summary` LLM step |
+| `$:/config/rimir/msg-import/quarantine-executables` | `yes` | Read by the Python script via env (defaults to on); set to `no` and pass `--allow-executables` if you really need them |
+
+!! Python extractor CLI
+
+```
+extract_msg.py --mode={body|attachments}
+               --input <abs-path-to-.msg>
+               --attach-dir <dir-or-prefix-path>
+               [--allow-executables]
+```
+
+* `--mode=body` writes inline-image files (cid:) to `--attach-dir` and emits frontmatter+markdown to stdout.
+* `--mode=attachments` writes non-inline attachments to `--attach-dir` and emits a JSON summary to stdout.
+* `--attach-dir` is interpreted as a directory when it ends with `/` (or already exists as a dir), otherwise as a `<dir>/<filename-prefix>` pair.

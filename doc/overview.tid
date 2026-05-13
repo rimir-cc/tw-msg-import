@@ -1,0 +1,41 @@
+title: $:/plugins/rimir/msg-import/doc/overview
+tags:
+type: text/vnd.tiddlywiki
+rdt.plugin-name: msg import
+rdt.section: Overview
+rdt.order: 1
+
+! Overview
+
+`rimir/msg-import` turns dropped Outlook `.msg` files into clean markdown tiddlers with YAML frontmatter. It is a configuration-only plugin: no server JS modules of its own, no widgets — all the heavy lifting is done by plugins that were already in the wiki:
+
+* ''rimir/file-upload'' handles the drop, content-hash dedup, and stores the binary under `files/email/`.
+* ''rimir/file-pipeline'' auto-runs the bundled pipeline when the MIME type is `application/vnd.ms-outlook`.
+* ''rimir/runner'' executes the Python extractor as a whitelisted command from `runner-actions.json`.
+* ''rimir/frontmatter'' deserializes the resulting `.md` body back into tiddler fields on save / reload.
+
+!! What you get per drop
+
+For a dropped `meeting.msg`, three tiddler groups appear:
+
+* `meeting.msg` — the original binary, served via `_canonical_uri`
+* `meeting.msg.email` — the markdown body, `type: text/x-frontmattered-markdown`, with all email metadata in YAML frontmatter
+* `meeting.msg.attachments/<filename>` — one artifact tiddler per non-inline attachment
+
+Inline images (`cid:` refs in HTML body) are saved as static files under `files/email/_derived/<basename>/cid_<id>.<ext>` and the body's image refs are rewritten to point at them.
+
+!! Pipeline shape
+
+```json
+{
+  "name": "msg",
+  "match": ["application/vnd.ms-outlook"],
+  "steps": [
+    { "id": "convert",     "action": "convert-msg-body",       "captureStdout": true,  ... },
+    { "id": "attachments", "action": "extract-msg-attachments","scanDir": true,       ... },
+    { "id": "summary",     "type": "llm", "condition": { "config": "$:/config/rimir/msg-import/llm-summary", "equals": "yes" }, ... }
+  ]
+}
+```
+
+The LLM summary step is gated by config and is off by default.

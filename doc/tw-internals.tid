@@ -1,0 +1,33 @@
+title: $:/plugins/rimir/msg-import/doc/tw-internals
+tags:
+type: text/vnd.tiddlywiki
+rdt.plugin-name: msg import
+rdt.section: TW Internals
+rdt.order: 7
+
+! TW Internals
+
+!! How the drop reaches this plugin
+
+`<$file-dropzone>` (`rimir/file-upload`) writes the binary to disk and, after a successful upload, calls `pipeline-client.runPipeline()` (`rimir/file-pipeline`). That posts to `/api/file-pipeline`, which calls `pipeline-executor.matchPipeline(mimeType)`. Since `pipelines/msg.tid` declares `match: ["application/vnd.ms-outlook"]`, the msg pipeline is selected.
+
+The executor runs the steps in order, server-side, using `child_process.exec` with `cwd = $tw.boot.wikiPath`. `{{input}}` and `{{output}}` in the runner-action command strings are auto-quoted (`pipeline-executor.js` lines 208-210). User-defined params are NOT auto-quoted — this plugin uses only `{{input}}` and `{{output}}`.
+
+!! Frontmatter round-trip
+
+The `.email` artifact is created with `type: text/x-frontmattered-markdown`. `rimir/frontmatter`'s deserializer parses the YAML header into tiddler fields; the save-patch writes them back to disk as `<title>.md`. On cold reload, the two-pass startup re-parse (see memory `tw-frontmatter-reparse`) reads both `boot.files` entries and tiddlers loaded via `tiddlywiki.files`.
+
+The minimal YAML library (`frontmatter/yaml.js`) supports flat scalars and arrays of scalars only — no nested objects, no multi-line scalars. This plugin's frontmatter stays within that subset.
+
+!! Cascade
+
+| !Event | !file-upload action | !Effect on msg artifacts |
+| Delete parent `.msg` | `routes/delete.js:deleteDerived` + `startup.js:cascadeDeleteArtifacts` | `_derived/<basename>/` dir gone + `.email` / `.attachments/*` / `.summary` tiddlers gone |
+| Rename parent `.msg` | `routes/rename.js:renameDerived` + `startup.js:cascadeRenameArtifacts` (≥ 0.1.20) | `_derived/<basename>/` dir renamed + artifact tiddler titles updated |
+
+!! Known gotchas this plugin avoids
+
+* ''Runner shell-injection'' — runner does string-substitution of params into a shell command. This plugin only uses `{{input}}` and `{{output}}`, both of which file-pipeline auto-quotes before passing through.
+* ''Pandoc filename injection'' — pandoc is invoked from the Python script via stdin (`subprocess.run(..., input=html_bytes)`). No filename argument, no shell.
+* ''Path traversal in attachments'' — the Python script sanitizes every email-supplied attachment filename (no `..`, no `/`, no control chars) and refuses to operate on input paths outside `TW_WIKI_PATH`.
+* ''Inline image scanDir collisions'' — body-step inline images use `cid_` prefix; attachments-step files use `att_` prefix. The scanDir filter on the attachments step has basename prefix `att_`, so it picks up only attachments — not inline images.

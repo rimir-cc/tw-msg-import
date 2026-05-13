@@ -1,0 +1,45 @@
+title: $:/plugins/rimir/msg-import/pipelines/msg
+tags: $:/tags/rimir/file-pipeline/pipeline
+type: application/json
+
+{
+  "name": "msg",
+  "match": ["application/vnd.ms-outlook"],
+  "steps": [
+    {
+      "id": "thumb",
+      "action": "msg-thumb",
+      "input": "source",
+      "output": "_generated/{{name}}_thumb.png",
+      "params": {"size": "{{config:$:/config/rimir/file-pipeline/thumb-resolution}}"},
+      "condition": {"config": "$:/config/rimir/msg-import/thumb", "equals": "yes"},
+      "artifact": {"setField": "_thumbnail_uri"}
+    },
+    {
+      "id": "convert",
+      "action": "convert-msg-body",
+      "input": "source",
+      "output": "_derived/{{basename}}/",
+      "captureStdout": true,
+      "artifact": {"type": "conversion", "suffix": ".email", "tiddlerType": "text/x-frontmattered-markdown"}
+    },
+    {
+      "id": "attachments",
+      "action": "extract-msg-attachments",
+      "input": "source",
+      "output": "_derived/{{basename}}/att_",
+      "scanDir": true,
+      "scanExtensions": [".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff", ".txt", ".csv", ".log", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip", ".rar", ".7z", ".tar", ".gz", ".eml", ".ics", ".vcf", ".rtf", ".odt", ".ods", ".odp"],
+      "artifact": {"type": "attachment", "prefix": ".attachments/"}
+    },
+    {
+      "id": "summary",
+      "type": "llm",
+      "input": "step:convert",
+      "mode": "auto",
+      "promptTemplate": "$:/plugins/rimir/msg-import/prompts/email-summary",
+      "condition": {"config": "$:/config/rimir/msg-import/llm-summary", "equals": "yes"},
+      "artifact": {"type": "summary", "suffix": ".summary", "tiddlerType": "text/x-markdown"}
+    }
+  ]
+}

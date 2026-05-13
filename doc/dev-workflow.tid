@@ -1,0 +1,68 @@
+title: $:/plugins/rimir/msg-import/doc/dev-workflow
+tags:
+type: text/vnd.tiddlywiki
+rdt.plugin-name: msg import
+rdt.section: Dev Workflow
+rdt.order: 3
+
+! Dev Workflow
+
+!! Local install
+
+```
+# in dev-wiki/
+python3 -m venv .venv
+.venv/bin/pip install -r plugins/rimir/msg-import/scripts/requirements.txt
+# merge plugins/rimir/msg-import/runner-actions/msg.json into runner-actions.json
+# restart the server
+```
+
+(System pip is blocked on Debian/Ubuntu 24.04+ by PEP 668. The runner-action commands reference `.venv/bin/python3` relative to `$tw.boot.wikiPath`. Swap for system `python3` if you installed extract-msg another way.)
+
+!! Smoke test without the wiki
+
+The Python script runs standalone — no need to drop a file through the UI to see what comes out:
+
+```
+cd dev-wiki
+TW_WIKI_PATH="$(pwd)" .venv/bin/python3 plugins/rimir/msg-import/scripts/extract.py \
+  --mode=body \
+  --input "$(pwd)/files/email/some.msg" \
+  --attach-dir "$(pwd)/files/email/_derived/some.msg/" \
+  --source-uri "/files/email/some.msg" \
+  > /tmp/out.md
+```
+
+Inspect `/tmp/out.md` — should start with `---` (YAML frontmatter) and contain the markdown body. Inline images appear under `_derived/some.msg/cid_*.<ext>`.
+
+For attachments:
+
+```
+TW_WIKI_PATH="$(pwd)" .venv/bin/python3 plugins/rimir/msg-import/scripts/extract.py \
+  --mode=attachments \
+  --input "$(pwd)/files/email/some.msg" \
+  --attach-dir "$(pwd)/files/email/_derived/some.msg/att_" \
+  --source-uri "/files/email/some.msg"
+```
+
+Returns a JSON summary on stdout. Files land in `_derived/some.msg/` with the `att_` prefix.
+
+!! Restart rules
+
+* The pipeline tiddler (`pipelines/msg.tid`) and config tiddlers are re-read per request — no restart.
+* `runner-actions.json` is loaded at boot only by both `rimir/runner` and `rimir/file-pipeline` — restart after merging the snippet.
+* The Python script is read every time the runner shells out — no restart needed when iterating on it.
+
+!! Iterating on the extractor
+
+When tweaking `extract.py`, run the standalone smoke test above. Drop the same `.msg` again through the UI; file-upload's content-hash dedup will reject the duplicate parent, but you can delete the parent tiddler first (and let cascade clean up the artifacts) before re-dropping.
+
+!! Files at a glance
+
+| !File | !What it does |
+| `pipelines/msg.tid` | Pipeline def — MIME match + 3 steps |
+| `runner-actions/msg.json` | Two whitelisted runner actions (snippet to merge) |
+| `scripts/extract.py` | Parses .msg via the `extract-msg` lib, calls pandoc, emits frontmatter+markdown. ''Don't rename to `extract_msg.py`'' — that shadows the library and `import extract_msg` resolves to the script itself, breaking the API |
+| `prompts/email-summary.tid` | LLM prompt template for the optional summary step |
+| `config/llm-summary.tid` | Toggle for the summary step (default: `no`) |
+| `config/quarantine-executables.tid` | Toggle for `.exe`/`.bat`/... blocking (default: `yes`) |

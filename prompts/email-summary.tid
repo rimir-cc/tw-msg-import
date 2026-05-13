@@ -1,0 +1,31 @@
+title: $:/plugins/rimir/msg-import/prompts/email-summary
+tags: $:/tags/rimir/file-pipeline/prompt
+type: text/vnd.tiddlywiki
+caption: Email Summary
+description: Summarize an imported email and extract action items
+
+You are summarizing an email. The input contains a YAML frontmatter header (subject, from, to, date, ...) followed by the email body in markdown. Produce a short markdown digest using exactly these sections, in this order, and nothing else:
+
+## TL;DR
+
+One or two sentences capturing why the email matters.
+
+## Decisions & asks
+
+Bulleted list. Each bullet starts with the actor (e.g. **Alice** or **the sender**) and states the decision, request, or commitment, plus any deadline mentioned. Skip the section if there is none.
+
+## Action items
+
+Bulleted list of follow-ups *for the reader*, each phrased as an imperative ("Reply by ...", "Forward to ...", "Schedule ..."). Skip the section if there is none.
+
+## Open questions
+
+Bulleted list of questions raised but not answered in the thread. Skip if none.
+
+Be concise. Do not echo the headers, quote the body, or restate the metadata. Do not invent details that are not in the email.
+
+---
+
+Email to summarize:
+
+{{text}}

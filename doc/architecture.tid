@@ -1,0 +1,59 @@
+title: $:/plugins/rimir/msg-import/doc/architecture
+tags:
+type: text/vnd.tiddlywiki
+rdt.plugin-name: msg import
+rdt.section: Architecture
+rdt.order: 2
+
+! Architecture
+
+!! Layers
+
+# ''file-upload'' (existing) — `<$file-dropzone>` posts the binary to `/api/file-upload-binary`. Server-side MIME-checks against `$:/config/rimir/file-upload/media-types`, computes content hash, routes by MIME via `helpers.js:getSubfolderForType` (msg-import adds `application/vnd.ms-outlook → email/`), writes to `files/email/<filename>.msg`.
+# ''file-pipeline'' (existing) — after upload, `widgets/dropzone.js:triggerPipeline()` posts to `/api/file-pipeline`. `pipeline-executor.js` matches `msg.tid` by MIME and runs its steps.
+# ''msg-import'' (this plugin) — contributes `pipelines/msg.tid` and the two runner-actions `convert-msg-body` / `extract-msg-attachments` (merged into `runner-actions.json`).
+# ''runner'' (existing) — executes the Python extractor `scripts/extract.py`. Pipeline-executor passes `{{input}}` and `{{output}}` as auto-quoted absolute paths.
+# ''frontmatter'' (existing) — deserializes the `text/x-frontmattered-markdown` artifact tiddler's YAML header into tiddler fields; the save patch writes them back to `.md` on disk.
+
+!! Data flow
+
+```
+drop .msg
+  └─▶ file-upload → files/email/<file>.msg + parent tiddler
+        └─▶ file-pipeline (MIME match)
+              ├─ convert       → captureStdout → .email tiddler (markdown + YAML)
+              ├─ attachments   → scanDir       → .attachments/<name> tiddlers
+              └─ summary (opt) → LLM           → .summary tiddler
+```
+
+!! On-disk layout for one email
+
+```
+files/email/
+  meeting.msg                            ← parent
+  _derived/
+    meeting.msg/
+      cid_<id>.png                       ← inline images (referenced from body)
+      att_invoice.pdf                    ← non-inline attachment (artifact tiddler)
+      att_agenda.docx
+```
+
+!! Cascade
+
+* ''Delete'' — `routes/delete.js` already removes `_derived/<basename>/`; `_artifact_source` tiddlers (`.email`, `.attachments/*`, optional `.summary`) follow via `file-upload/startup.js:cascadeDeleteArtifacts`.
+* ''Rename'' — `routes/rename.js` (file-upload ≥ 0.1.20) renames the `_derived/<basename>/` directory; artifact tiddlers follow via `cascadeRenameArtifacts`.
+
+!! ViewTemplateBody cascade
+
+Parent `.msg` tiddlers have `_canonical_uri` pointing at the binary on disk; TW's default body view shows the "Trying to load external content" fallback because no built-in viewer handles `application/vnd.ms-outlook`. msg-import 0.1.3 ships:
+
+* ''`$:/plugins/rimir/msg-import/cascade/msg`'' — tagged `$:/tags/ViewTemplateBodyFilter`, `list-before` the file-upload `cascade/thumbnail`. Matches on `type == application/vnd.ms-outlook` and dispatches to a custom body template.
+* ''`$:/plugins/rimir/msg-import/body/msg`'' — two-mode view sharing the file-upload state tiddler `$:/state/file-upload/view-mode/<title>`:
+** ''thumb'' (default): renders `_thumbnail_uri` as a small image; click switches to "full".
+** ''full'': transcludes the sibling `<title>.email` tiddler's body (markdown with frontmatter fields). Includes a back-to-thumb button.
+
+The cascade is generic — clicking the thumbnail in TW's story river expands to the email body inline. Same template fires when orga-apps' attachment tile click opens the `.email` tiddler in a new tab via the `#`-permalink workaround for appify (see `tw-appify-permalink-workaround` memory).
+
+!! Boundaries (not auto-handled)
+
+* Inline image URLs in the markdown body are wiki-absolute (e.g. `/files/email/_derived/meeting.msg/cid_abc.png`). If a parent `.msg` is renamed, the body's image references are NOT rewritten — they still point at the old `_derived/<basename>/` directory until you re-import or hand-edit. Live with it for v0.1; revisit if it bites.

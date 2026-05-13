@@ -1,0 +1,8 @@
+created: 20260513120000000
+list-before: $:/plugins/rimir/file-upload/cascade/thumbnail
+modified: 20260513120000000
+tags: $:/tags/ViewTemplateBodyFilter
+title: $:/plugins/rimir/msg-import/cascade/msg
+type: text/vnd.tiddlywiki
+
+[get[type]match[application/vnd.ms-outlook]then[$:/plugins/rimir/msg-import/body/msg]]

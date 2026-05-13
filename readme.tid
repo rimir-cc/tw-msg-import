@@ -1,0 +1,45 @@
+title: $:/plugins/rimir/msg-import/readme
+type: text/vnd.tiddlywiki
+
+! MSG Import
+
+Drop Outlook `.msg` files into a `<$file-dropzone>` and get a clean markdown tiddler with YAML frontmatter, plus the attachments as artifact child tiddlers.
+
+The original `.msg` blob is preserved as the canonical asset under `files/email/`, so the email is still re-downloadable.
+
+!! Key Features
+
+* ''Drag-and-drop import'' — works in any `<$file-dropzone>` once the MIME type is allow-listed in file-upload
+* ''Frontmatter metadata'' — subject, from, to, cc, bcc, date, message-id, in-reply-to extracted into YAML fields (handled by `rimir/frontmatter` for round-trip)
+* ''HTML → markdown'' — email body converted via pandoc (no shell, no filename arg → no injection)
+* ''Attachments as artifacts'' — each attachment becomes a child tiddler with `_artifact_source` linking back to the parent .msg; rename and delete cascade for free
+* ''Inline images preserved'' — `cid:` references in the body are rewritten to wiki-relative URLs pointing at the saved inline-image files
+* ''Optional LLM summary'' — gated by `$:/config/rimir/msg-import/llm-summary`; mirrors the `docx-llm` pipeline
+* ''Executable quarantine'' — `.exe`, `.bat`, `.ps1`, `.vbs`, `.jar` etc. are listed in the frontmatter as `msg-quarantined-attachments` and not written to disk (configurable)
+
+!! Prerequisites
+
+* ''rimir/file-upload'' — drop handling and the `application/vnd.ms-outlook` MIME entry (shipped in file-upload ≥ 0.1.20)
+* ''rimir/file-pipeline'' — pipeline executor; this plugin contributes one pipeline tiddler
+* ''rimir/runner'' — the two runner actions live in `dev-wiki/runner-actions.json`
+* ''rimir/frontmatter'' — `text/x-frontmattered-markdown` deserializer and save-patch
+* ''Python 3'' with `extract-msg` (`pip install extract-msg`)
+* ''pandoc'' on `PATH`
+
+!! Install
+
+# Install the plugin (drop the plugin folder under `dev-wiki/plugins/rimir/msg-import/`).
+# Add `"rimir/msg-import"` to your wiki's `tiddlywiki.info` plugin list.
+# Merge the two entries from `runner-actions/msg.json` into `dev-wiki/runner-actions.json` (restart the server after — runner-actions are read at boot).
+# `pip install -r dev-wiki/plugins/rimir/msg-import/scripts/requirements.txt` in the Python environment your runner shells out to.
+# Confirm `pandoc --version` works on the server's `PATH`.
+
+!! Output Shape
+
+For an imported `meeting.msg`, three tiddler groups are created:
+
+* `meeting.msg` — the original binary, `type: application/vnd.ms-outlook`, with `_canonical_uri = /files/email/meeting.msg`
+* `meeting.msg.email` — the markdown body, `type: text/x-frontmattered-markdown`; frontmatter carries the metadata
+* `meeting.msg.attachments/<filename>` — one tiddler per attachment, each with `_artifact_source = meeting.msg` and `_artifact_type = attachment`
+
+Renaming `meeting.msg` cascades through all three groups via the file-upload artifact cascade. Same for delete.

@@ -1,0 +1,39 @@
+title: $:/plugins/rimir/msg-import/doc/faq
+tags:
+type: text/vnd.tiddlywiki
+rdt.plugin-name: msg import
+rdt.section: FAQ
+rdt.order: 5
+
+! FAQ
+
+!!! The drop is rejected with "type not allowed"
+
+Check that `application/vnd.ms-outlook` is in `$:/config/rimir/file-upload/media-types`. Some browsers report `.msg` files as `application/octet-stream` — file-upload won't accept that. If this happens, open the `.msg` via the file picker in the dropzone (which uses the OS's MIME guess and usually gives the right type).
+
+!!! Nothing happens after drop / the `.email` tiddler is not created
+
+# Confirm `python3` is on the server's `PATH` and `extract-msg` is installed (`pip show extract-msg`).
+# Confirm `pandoc --version` works.
+# Confirm the two runner-actions are in `dev-wiki/runner-actions.json` — server must be restarted after merging.
+# Check the server log for the line `[file-pipeline] Executing: python3 plugins/rimir/msg-import/...` and any `Step 'convert' failed` lines below.
+
+!!! How do I see what the extractor produced?
+
+Run the smoke test from the Dev Workflow tab against the saved `.msg` under `files/email/`. The stdout is exactly what gets stored as the `.email` tiddler's text.
+
+!!! Why are some attachments missing from the imported email?
+
+Executable attachments are quarantined by default. They are listed in the email's `msg-quarantined-attachments` frontmatter field. To allow them, set `$:/config/rimir/msg-import/quarantine-executables` to `no` — but you do not want that on a multi-user wiki.
+
+!!! Inline image refs in the markdown body still show as `cid:...`
+
+The pandoc HTML→markdown conversion sometimes leaves `cid:` references for image elements that the script did not detect as inline attachments (for example, when the email's HTML used `<img src="cid:foo">` but the `.msg` did not flag the attachment with a matching `cid`). Re-importing the same `.msg` will not change this — the source `.msg` is the limit. Bare `cid:` refs are harmless in the rendered markdown beyond showing a broken image.
+
+!!! Can I rename the parent `.msg` tiddler to something nicer?
+
+Yes. The artifact cascade renames `.email`, `.attachments/*`, and the `_derived/<basename>/` directory on disk. ''But'' the markdown body's inline-image URLs still point at the old `_derived/<basename>/` path — they are not re-written. Re-import the message after the rename if you need the body refs to track.
+
+!!! Can I `.eml` import?
+
+Not in this plugin. The pipeline only matches `application/vnd.ms-outlook`. A sibling `eml-import` plugin would mirror the same shape but use `mailparser` or Python's `email.parser`. Out of scope for v0.1.
