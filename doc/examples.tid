@@ -37,7 +37,31 @@ Let's get the kickoff scheduled for next Tuesday. See the attached agenda...
 ![](/files/email/_derived/kickoff.msg/cid_logo123.png)
 ```
 
-The agenda PDF lives at `kickoff.msg.attachments/att_agenda.pdf` with `_artifact_source = kickoff.msg`.
+The agenda PDF lives at `kickoff.msg.attachments/att_agenda.pdf` with `_artifact_source = kickoff.msg` and `type: application/pdf` (file-pipeline ≥ 0.1.10 infers the MIME from the filename; older versions defaulted every output to `image/png`). Because the inferred MIME matches the PDF pipeline, file-pipeline's nested-trigger fires automatically and produces:
+
+```
+kickoff.msg                                          ← parent .msg
+kickoff.msg.email                                    ← markdown + frontmatter (from msg pipeline)
+kickoff.msg.attachments/att_agenda.pdf               ← the PDF attachment (typed application/pdf)
+kickoff.msg.attachments/att_agenda.pdf._thumbnail    ← thumbnail (from pdf pipeline)
+kickoff.msg.attachments/att_agenda.pdf.extracted     ← text extraction (from pdf pipeline, if enabled)
+```
+
+Each layer carries an `_artifact_source` field pointing one level up; file-upload's cascade walks the chain transitively so a single delete on `kickoff.msg` clears every layer + the entire `_derived/kickoff.msg/` directory tree.
+
+!! Example: an email with a forwarded .msg attached
+
+A `digest.msg` that contains a forwarded `original.msg` as a non-inline attachment produces:
+
+```
+digest.msg
+digest.msg.email
+digest.msg.attachments/att_original.msg           ← typed application/vnd.ms-outlook
+digest.msg.attachments/att_original.msg.email     ← from recursive msg pipeline
+digest.msg.attachments/att_original.msg.attachments/*   ← grandchildren if any
+```
+
+Each recursion adds the parent's URI to a `seen` map. If `original.msg` happens to be byte-identical to `digest.msg` (e.g. self-referential payload), the nested pipeline skips it instead of looping forever.
 
 !! Example: enable the LLM summary step
 

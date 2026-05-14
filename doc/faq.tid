@@ -34,6 +34,18 @@ The pandoc HTML→markdown conversion sometimes leaves `cid:` references for ima
 
 Yes. The artifact cascade renames `.email`, `.attachments/*`, and the `_derived/<basename>/` directory on disk. ''But'' the markdown body's inline-image URLs still point at the old `_derived/<basename>/` path — they are not re-written. Re-import the message after the rename if you need the body refs to track.
 
+!!! A PDF was attached but no PDF tiddler appeared
+
+Before file-pipeline 0.1.10, `createMultiFileArtifacts` typed every scanned output as `image/png`. The PDF tiddler actually existed but was mistyped and silently dropped by MIME-branching views (orga-apps attachment grid etc). Update to file-pipeline ≥ 0.1.10 — the artifact tiddler now gets `type: application/pdf` from its filename extension and the PDF pipeline triggers automatically. If you imported the message before upgrading, just re-drop it: file-upload's content-hash dedup short-circuits everything except the new PDF artifact.
+
+!!! Why does dropping a digest email with many attachments take a while?
+
+Each non-inline attachment is processed sequentially by its MIME-matched pipeline. A 20-attachment email with several PDFs will run the PDF pipeline 20 times. Pipelines are cycle-protected (`seen` map of URIs), so an attached `.msg` that recurses on itself short-circuits — but a flat list of 20 distinct PDFs is genuinely 20 pipeline runs.
+
+!!! Will deleting an email delete its attachments and their derived data?
+
+Yes — from file-upload ≥ 0.1.21, the artifact cascade is transitive. Deleting the parent `.msg` removes the `.email` tiddler, every `.attachments/*` tiddler, every nested pipeline product (PDF thumbnails, extractions, attached `.msg`'s own `.email`, etc.), and the entire `_derived/<basename>/` directory tree. A confirm modal pops first showing exactly what will be removed plus any tiddlers that link to anything in the cascade. Disable the modal via `$:/config/rimir/file-upload/confirm-deletes`.
+
 !!! Can I `.eml` import?
 
 Not in this plugin. The pipeline only matches `application/vnd.ms-outlook`. A sibling `eml-import` plugin would mirror the same shape but use `mailparser` or Python's `email.parser`. Out of scope for v0.1.

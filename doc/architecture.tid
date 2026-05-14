@@ -40,8 +40,13 @@ files/email/
 
 !! Cascade
 
-* ''Delete'' — `routes/delete.js` already removes `_derived/<basename>/`; `_artifact_source` tiddlers (`.email`, `.attachments/*`, optional `.summary`) follow via `file-upload/startup.js:cascadeDeleteArtifacts`.
-* ''Rename'' — `routes/rename.js` (file-upload ≥ 0.1.20) renames the `_derived/<basename>/` directory; artifact tiddlers follow via `cascadeRenameArtifacts`.
+* ''Delete'' — `routes/delete.js` recursively removes `_derived/<basename>/` (incl. nested pipeline products). `_artifact_source` tiddlers (`.email`, `.attachments/*`, optional `.summary`, and any tiddlers produced by nested pipelines like a PDF attachment's `.text` extraction) cascade via `file-upload/startup.js:cascadeDeleteArtifacts`, which walks the chain transitively from file-upload ≥ 0.1.21.
+* ''Rename'' — `routes/rename.js` (file-upload ≥ 0.1.20) renames the `_derived/<basename>/` directory; artifact tiddlers follow via `cascadeRenameArtifacts`, which from 0.1.21 also rewires multi-level descendants (e.g. an attached PDF's thumbnail artifact).
+* ''Delete confirm modal'' — from file-upload ≥ 0.1.21, deleting any tiddler with `_canonical_uri` opens a confirmation modal listing the full transitive cascade + every backlinking tiddler. The user can disable via `$:/config/rimir/file-upload/confirm-deletes`.
+
+!! Attachments are first-class
+
+Non-inline attachments are written to `_derived/<basename>/att_<safe-name>`, picked up by file-pipeline's `scanDir`, and turned into artifact tiddlers with `_artifact_source = <parent.msg>`. From file-pipeline ≥ 0.1.10 each artifact's `type` is inferred from the filename extension (was: every output got `image/png`). After creation, the new `rimir-file-pipeline-artifact-created` hook fires and the `nested-trigger-startup` module re-runs the matching pipeline for each artifact — so a PDF attachment gets its own thumbnail + text extraction, and an attached `.msg` gets its own `.email` recursively. Cycle protection: every recursive call carries a `seen` map of URIs already pipelined in the chain.
 
 !! ViewTemplateBody cascade
 
