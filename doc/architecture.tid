@@ -48,6 +48,24 @@ files/email/
 
 Non-inline attachments are written to `_derived/<basename>/att_<safe-name>`, picked up by file-pipeline's `scanDir`, and turned into artifact tiddlers with `_artifact_source = <parent.msg>`. From file-pipeline ≥ 0.1.10 each artifact's `type` is inferred from the filename extension (was: every output got `image/png`). After creation, the new `rimir-file-pipeline-artifact-created` hook fires and the `nested-trigger-startup` module re-runs the matching pipeline for each artifact — so a PDF attachment gets its own thumbnail + text extraction, and an attached `.msg` gets its own `.email` recursively. Cycle protection: every recursive call carries a `seen` map of URIs already pipelined in the chain.
 
+From file-pipeline 0.1.11 the artifact also inherits the source's `pa.parent` field (orga-apps' note-anchor), so for any cross-cutting query "what tiddlers live in this note" the attachments show up. UI-wise though, the attachments are not exposed as siblings of the email (see next section).
+
+!! Outlook-style inline attachments (`body/msg.tid`, ≥ 0.1.5)
+
+When a `.msg` is expanded into its "full" view, `body/msg.tid` renders an ''Attachments'' row at the bottom of the email body listing every `_artifact_source<currentTiddler>_artifact_type[attachment]` tiddler:
+
+* Tile uses `_thumbnail_uri` when present (PDFs after the PDF pipeline ran, images after the image pipeline)
+* Falls back to inline image preview for `image/*` artifacts that have no thumbnail
+* Falls back to a 📄 emoji + filename for everything else
+* Click on a tile opens the file in a new browser tab
+
+Surface separation:
+
+|orga-apps note attachment grid (`views/details.tid`) | Direct uploads only — `pa.parent[<note>]!has[_artifact_source]`. The `.msg` shows here. Its inner PDFs do not |
+|`body/msg.tid` Attachments row | Email's own children — `_artifact_source<msg>_artifact_type[attachment]`. The PDFs show here |
+
+This mirrors how a mail client renders attachments — the email is one box on the desk, its enclosed files live inside the box — rather than spilling them out as separate desk items.
+
 !! ViewTemplateBody cascade
 
 Parent `.msg` tiddlers have `_canonical_uri` pointing at the binary on disk; TW's default body view shows the "Trying to load external content" fallback because no built-in viewer handles `application/vnd.ms-outlook`. msg-import 0.1.3 ships:

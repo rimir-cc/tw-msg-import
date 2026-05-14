@@ -3,7 +3,7 @@
     "description": "Drop Outlook .msg files into the wiki — convert to markdown+frontmatter, extract attachments and inline images",
     "name": "msg import",
     "author": "rimir",
-    "version": "0.1.4",
+    "version": "0.1.5",
     "core-version": ">=5.3.0",
     "source": "https://github.com/rimir-cc/tw-msg-import",
     "plugin-type": "plugin",
