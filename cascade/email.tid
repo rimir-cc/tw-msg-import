@@ -1,0 +1,6 @@
+title: $:/plugins/rimir/msg-import/cascade/email
+list-before: $:/plugins/rimir/file-upload/cascade/thumbnail
+tags: $:/tags/ViewTemplateBodyFilter
+type: text/vnd.tiddlywiki
+
+[type[text/x-frontmattered-markdown]has[msg-subject]then[$:/plugins/rimir/msg-import/body/email]]

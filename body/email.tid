@@ -1,0 +1,68 @@
+title: $:/plugins/rimir/msg-import/body/email
+type: text/vnd.tiddlywiki
+
+\whitespace trim
+
+<!--
+Body view for `.email` tiddlers (a frontmattered-markdown tiddler that has
+the `msg-subject` field). Renders the email's PDF / image / file attachments
+at the top of the view (Outlook-style), then the markdown body below.
+
+`_artifact_source` on the .email points at the parent `.msg`; the attachment
+tiddlers carry the same `_artifact_source` (the same `.msg`) so we list them
+by `_artifact_source<msgParent>_artifact_type[attachment]`.
+-->
+
+<$let msgParent={{!!_artifact_source}}>
+
+<$list filter="[_artifact_source<msgParent>_artifact_type[attachment]first[]]" variable="ignore">
+<div class="rr-msg-attachments rr-msg-attachments-top">
+<div class="rr-msg-attachments-label">Attachments (<$count filter="[_artifact_source<msgParent>_artifact_type[attachment]]"/>)</div>
+<div class="rr-msg-attachment-grid">
+<$list filter="[_artifact_source<msgParent>_artifact_type[attachment]]" variable="att">
+<$let
+  isImage={{{ [<att>get[type]prefix[image/]then[yes]] }}}
+  thumbUri={{{ [<att>get[_thumbnail_uri]] }}}
+  fileUri={{{ [<att>get[_canonical_uri]] }}}
+  attName={{{ [<att>get[title]split[/]last[]] }}}
+>
+<div class="rr-msg-attachment-item">
+<a href=<<fileUri>> target="_blank" rel="noopener" class="rr-msg-attachment-link" title=<<attName>>>
+<%if [<thumbUri>!is[blank]] %>
+<img loading="lazy" class="rr-msg-attachment-thumb" src=<<thumbUri>>/>
+<%else%>
+<%if [<isImage>match[yes]] %>
+<img loading="lazy" class="rr-msg-attachment-thumb" src=<<fileUri>>/>
+<%else%>
+<div class="rr-msg-attachment-thumb rr-msg-attachment-thumb-fallback">📄</div>
+<%endif%>
+<%endif%>
+<div class="rr-msg-attachment-name"><$text text=<<attName>>/></div>
+</a>
+</div>
+</$let>
+</$list>
+</div>
+</div>
+</$list>
+
+</$let>
+
+<!-- Markdown body of the .email, parsed via the frontmatter parser
+     (which forwards to tiddlywiki/markdown's text/x-markdown parser).
+     `<$transclude $mode="block"/>` here renders the current tiddler's
+     CONTENT (the markdown body) — it does not re-invoke the body cascade. -->
+<$transclude $mode="block"/>
+
+<style>
+.rr-msg-attachments { margin-bottom: 1.2em; padding-bottom: 0.8em; border-bottom: 1px solid #e0e0e0; }
+.rr-msg-attachments-top { margin-top: 0; }
+.rr-msg-attachments-label { font-size: 0.85em; font-weight: 600; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5em; }
+.rr-msg-attachment-grid { display: flex; flex-wrap: wrap; gap: 0.6em; }
+.rr-msg-attachment-item { width: 110px; }
+.rr-msg-attachment-link { display: block; text-decoration: none; color: inherit; padding: 0.3em; border: 1px solid #ddd; border-radius: 4px; transition: background 0.1s; }
+.rr-msg-attachment-link:hover { background: #f5f5f5; }
+.rr-msg-attachment-thumb { display: block; width: 100%; height: 80px; object-fit: cover; border-radius: 2px; }
+.rr-msg-attachment-thumb-fallback { display: flex; align-items: center; justify-content: center; font-size: 2.4em; background: #f0f0f0; }
+.rr-msg-attachment-name { font-size: 0.75em; margin-top: 0.3em; word-break: break-all; line-height: 1.2; max-height: 2.4em; overflow: hidden; text-overflow: ellipsis; }
+</style>

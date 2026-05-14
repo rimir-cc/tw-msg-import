@@ -1,0 +1,15 @@
+{
+    "description": "Test edition for msg-import (TW-side specs; Python extractor specs run separately)",
+    "plugins": [
+        "tiddlywiki/jasmine",
+        "tiddlywiki/markdown",
+        "rimir/frontmatter",
+        "rimir/file-upload",
+        "rimir/file-pipeline",
+        "rimir/msg-import"
+    ],
+    "themes": [
+        "tiddlywiki/vanilla",
+        "tiddlywiki/snowwhite"
+    ]
+}

@@ -50,19 +50,26 @@ Non-inline attachments are written to `_derived/<basename>/att_<safe-name>`, pic
 
 From file-pipeline 0.1.11 the artifact also inherits the source's `pa.parent` field (orga-apps' note-anchor), so for any cross-cutting query "what tiddlers live in this note" the attachments show up. UI-wise though, the attachments are not exposed as siblings of the email (see next section).
 
-!! Outlook-style inline attachments (`body/msg.tid`, ≥ 0.1.5)
+!! Outlook-style inline attachments (`body/email.tid`, ≥ 0.1.6)
 
-When a `.msg` is expanded into its "full" view, `body/msg.tid` renders an ''Attachments'' row at the bottom of the email body listing every `_artifact_source<currentTiddler>_artifact_type[attachment]` tiddler:
+The email's attachments are rendered at the ''top'' of the `.email` view. Two ViewTemplateBody cascades cooperate:
 
-* Tile uses `_thumbnail_uri` when present (PDFs after the PDF pipeline ran, images after the image pipeline)
-* Falls back to inline image preview for `image/*` artifacts that have no thumbnail
-* Falls back to a 📄 emoji + filename for everything else
-* Click on a tile opens the file in a new browser tab
+* ''`cascade/msg`'' — matches `[type[application/vnd.ms-outlook]]` → dispatches to `body/msg` (the parent .msg thumb / expand toggle).
+* ''`cascade/email`'' (new in 0.1.6) — matches `[type[text/x-frontmattered-markdown]has[msg-subject]]` → dispatches to `body/email`.
+
+`body/email` is the single source of truth for email rendering:
+
+# Attachment row first — `[_artifact_source<msgParent>_artifact_type[attachment]]` where `msgParent = {!!_artifact_source}` (the .email's own `_artifact_source` points back at the .msg). The same .msg is the `_artifact_source` of every PDF/image attachment, so the filter naturally finds them.
+# Markdown body second — `<$transclude $mode="block"/>` renders the .email's `text` field through the frontmatter parser (which forwards to tiddlywiki/markdown).
+
+`body/msg` in "full" mode delegates: `<$tiddler tiddler=<<emailTitle>>><$transclude $tiddler="$:/plugins/rimir/msg-import/body/email"/></$tiddler>`. So whether the user clicks the .msg thumb in the wiki story river or opens the .email tiddler in a new tab (orga-apps' `#`-permalink pattern), they get the same view.
+
+Tile fallback chain: `_thumbnail_uri` → inline `image/*` preview → 📄 emoji + filename. Click on a tile opens the file in a new tab.
 
 Surface separation:
 
 |orga-apps note attachment grid (`views/details.tid`) | Direct uploads only — `pa.parent[<note>]!has[_artifact_source]`. The `.msg` shows here. Its inner PDFs do not |
-|`body/msg.tid` Attachments row | Email's own children — `_artifact_source<msg>_artifact_type[attachment]`. The PDFs show here |
+|`body/email.tid` Attachments row (top of email body) | Email's own children — `_artifact_source<msg>_artifact_type[attachment]`. The PDFs show here |
 
 This mirrors how a mail client renders attachments — the email is one box on the desk, its enclosed files live inside the box — rather than spilling them out as separate desk items.
 

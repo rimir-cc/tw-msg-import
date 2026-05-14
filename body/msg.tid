@@ -12,61 +12,18 @@ type: text/vnd.tiddlywiki
 </$button>
 </$reveal>
 
-<!-- Full view: transclude the .email sibling, with a back-to-thumb button, plus inline attachments -->
+<!-- Full view: delegate to body/email so the .msg's expanded view and a
+     direct visit to the .email tiddler render identically (attachments at
+     top + markdown body). -->
 <$reveal type="match" state=<<thumb-state>> text="full" tag="div" class="fu-full-view rr-msg-full">
 <$button class="tc-btn-invisible rr-msg-collapse" actions="<$action-setfield $tiddler=<<thumb-state>> text='thumb'/>">
 ↩ thumb
 </$button>
 <$list filter="[<emailTitle>!is[missing]]" variable="ignore" emptyMessage="//No `.email` artifact found — the msg-import pipeline may not have run.//">
-<$transclude $tiddler=<<emailTitle>> $mode="block"/>
-</$list>
-
-<!-- Attachments inline (Outlook-style): the email owns its attachments, not the
-     surrounding note view. Filters by _artifact_source = the parent .msg AND
-     _artifact_type = attachment so non-attachment artifacts (`.email`, `.summary`,
-     `.extracted` …) are excluded. -->
-<$list filter="[_artifact_source<currentTiddler>_artifact_type[attachment]first[]]" variable="ignore">
-<div class="rr-msg-attachments">
-<div class="rr-msg-attachments-label">Attachments</div>
-<div class="rr-msg-attachment-grid">
-<$list filter="[_artifact_source<currentTiddler>_artifact_type[attachment]]" variable="att">
-<$let
-  isImage={{{ [<att>get[type]prefix[image/]then[yes]] }}}
-  thumbUri={{{ [<att>get[_thumbnail_uri]] }}}
-  fileUri={{{ [<att>get[_canonical_uri]] }}}
-  attName={{{ [<att>get[title]split[/]last[]] }}}
->
-<div class="rr-msg-attachment-item">
-<a href=<<fileUri>> target="_blank" rel="noopener" class="rr-msg-attachment-link" title=<<attName>>>
-<%if [<thumbUri>!is[blank]] %>
-<img loading="lazy" class="rr-msg-attachment-thumb" src=<<thumbUri>>/>
-<%else%>
-<%if [<isImage>match[yes]] %>
-<img loading="lazy" class="rr-msg-attachment-thumb" src=<<fileUri>>/>
-<%else%>
-<div class="rr-msg-attachment-thumb rr-msg-attachment-thumb-fallback">📄</div>
-<%endif%>
-<%endif%>
-<div class="rr-msg-attachment-name"><$text text=<<attName>>/></div>
-</a>
-</div>
-</$let>
-</$list>
-</div>
-</div>
+<$tiddler tiddler=<<emailTitle>>>
+<$transclude $tiddler="$:/plugins/rimir/msg-import/body/email" $mode="block"/>
+</$tiddler>
 </$list>
 </$reveal>
 
 </$let>
-
-<style>
-.rr-msg-attachments { margin-top: 1.2em; padding-top: 0.8em; border-top: 1px solid #e0e0e0; }
-.rr-msg-attachments-label { font-size: 0.85em; font-weight: 600; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5em; }
-.rr-msg-attachment-grid { display: flex; flex-wrap: wrap; gap: 0.6em; }
-.rr-msg-attachment-item { width: 110px; }
-.rr-msg-attachment-link { display: block; text-decoration: none; color: inherit; padding: 0.3em; border: 1px solid #ddd; border-radius: 4px; transition: background 0.1s; }
-.rr-msg-attachment-link:hover { background: #f5f5f5; }
-.rr-msg-attachment-thumb { display: block; width: 100%; height: 80px; object-fit: cover; border-radius: 2px; }
-.rr-msg-attachment-thumb-fallback { display: flex; align-items: center; justify-content: center; font-size: 2.4em; background: #f0f0f0; }
-.rr-msg-attachment-name { font-size: 0.75em; margin-top: 0.3em; word-break: break-all; line-height: 1.2; max-height: 2.4em; overflow: hidden; text-overflow: ellipsis; }
-</style>
