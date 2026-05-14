@@ -78,6 +78,58 @@ describe("msg-import: cascade/email dispatches to body/email", function () {
 	});
 });
 
+describe("msg-import: cascade/eml dispatches the .eml parent to body/msg", function () {
+
+	var CASCADE_FILTER = $tw.wiki.getTiddlerText("$:/plugins/rimir/msg-import/cascade/eml") || "";
+	var MSG_BODY = "$:/plugins/rimir/msg-import/body/msg";
+
+	var added = [];
+
+	function add(title, fields) {
+		var base = {title: title};
+		for(var k in fields) base[k] = fields[k];
+		$tw.wiki.addTiddler(new $tw.Tiddler(base));
+		added.push(title);
+	}
+
+	beforeEach(function() { added = []; });
+	afterEach(function() {
+		for(var i = 0; i < added.length; i++) $tw.wiki.deleteTiddler(added[i]);
+	});
+
+	function evalCascade(title) {
+		return $tw.wiki.filterTiddlers(CASCADE_FILTER.trim(), {
+			getVariable: function(name) {
+				if(name === "currentTiddler") return title;
+				return undefined;
+			}
+		});
+	}
+
+	it("ships a non-empty cascade filter that mentions body/msg", function () {
+		expect(CASCADE_FILTER.length).toBeGreaterThan(0);
+		expect(CASCADE_FILTER.indexOf("body/msg")).toBeGreaterThan(-1);
+	});
+
+	it("dispatches a message/rfc822 tiddler to body/msg", function () {
+		add("$:/test/mi/parent.eml", {
+			type: "message/rfc822",
+			_canonical_uri: "/files/email/parent.eml"
+		});
+		expect(evalCascade("$:/test/mi/parent.eml")).toEqual([MSG_BODY]);
+	});
+
+	it("does NOT dispatch unrelated MIME types", function () {
+		add("$:/test/mi/parent.txt", {type: "text/plain"});
+		expect(evalCascade("$:/test/mi/parent.txt")).toEqual([]);
+	});
+
+	it("does NOT dispatch application/vnd.ms-outlook (handled by cascade/msg)", function () {
+		add("$:/test/mi/parent.msg", {type: "application/vnd.ms-outlook"});
+		expect(evalCascade("$:/test/mi/parent.msg")).toEqual([]);
+	});
+});
+
 describe("msg-import: body/email attachment filter", function () {
 
 	var EMAIL = "$:/test/mi/eml-" + Date.now() + ".msg.email";

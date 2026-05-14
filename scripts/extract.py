@@ -1,25 +1,42 @@
 #!/usr/bin/env python3
 """
-extract_msg.py — Outlook .msg → markdown+frontmatter for rimir/msg-import.
+extract.py — Outlook .msg / RFC 5322 .eml → markdown+frontmatter for
+rimir/msg-import.
 
-Invoked by file-pipeline via runner-actions.json. Two modes:
+Invoked by file-pipeline via runner-actions.json. Three modes:
 
   --mode=body
-    Parse <input.msg>, write inline images (cid:) into <attach-dir>,
-    pipe the HTML body through pandoc, emit YAML frontmatter + markdown
-    to stdout. The pipeline captures stdout into a `.email` tiddler
-    (type text/x-frontmattered-markdown).
+    Parse <input>, write inline images (cid:) into <attach-dir>, pipe the
+    HTML body through pandoc, emit YAML frontmatter + markdown to stdout.
+    The pipeline captures stdout into a `.email` tiddler (type
+    text/x-frontmattered-markdown).
 
   --mode=attachments
-    Parse <input.msg>, write all non-inline attachments into <attach-dir>.
-    The pipeline picks them up via scanDir and creates artifact tiddlers.
+    Parse <input>, write all non-inline attachments into <attach-dir>. The
+    pipeline picks them up via scanDir and creates artifact tiddlers.
+
+  --mode=thumb
+    Render a small PNG preview of the message (subject text in a caption)
+    via ImageMagick.
+
+Format dispatch is by filename extension:
+
+  *.msg  → parsed via the `extract-msg` library (Outlook binary format)
+  *.eml  → parsed via Python's stdlib `email` module (RFC 5322 plain text)
+
+Both paths share the same body / attachments / thumb emission logic — the
+`.eml` parser projects an `EmailMessage` through the subset of the
+extract-msg API this script uses (subject / sender / to / cc / bcc / date
+/ message-id / in-reply-to / htmlBody / body / attachments[]).
 
 Security: realpath of --input is asserted to live under $TW_WIKI_PATH (cwd
 fallback). Attachment filenames are sanitized (no traversal, no control
 chars, ASCII-safe). Executable extensions are quarantined unless
 --allow-executables is passed.
 
-Dependencies: extract-msg (pip), pandoc (system).
+Dependencies: pandoc (system), and `extract-msg` (pip) for the `.msg` path
+only. The `.eml` path uses Python's stdlib `email` module — no extra pip
+install required.
 """
 
 from __future__ import annotations
@@ -237,6 +254,118 @@ def derived_url_for(filename: str, source_uri: str) -> str:
     return urllib.parse.quote(url, safe="/")
 
 
+def _detect_format(input_path: Path) -> str:
+    """Pick a parser based on filename extension.
+
+    `.eml` → RFC 5322 (stdlib `email` module); everything else (including
+    `.msg`) is routed to `extract-msg`. The magic-byte sniff would be more
+    robust but adds little here — file-upload's dropzone already validates
+    by MIME, and the pipeline only fires for the two registered types.
+    """
+    if input_path.suffix.lower() == ".eml":
+        return "eml"
+    return "msg"
+
+
+class _EmlAttachment:
+    """Minimal attachment shape compatible with `extract-msg`'s Attachment.
+
+    Exposes the subset used downstream: `.cid` (lowercase, brackets
+    stripped), `.longFilename` / `.shortFilename` / `.displayName` (all
+    the same string here — RFC 5322 doesn't have the Outlook split), and
+    `.data` (bytes).
+    """
+
+    __slots__ = ("cid", "longFilename", "shortFilename", "displayName", "data")
+
+    def __init__(self, cid: str, name: str, data: bytes) -> None:
+        self.cid = cid
+        self.longFilename = name
+        self.shortFilename = name
+        self.displayName = name
+        self.data = data
+
+
+class _EmlMsg:
+    """Adapter projecting Python's `email.message.EmailMessage` through the
+    subset of extract-msg's `Message` API this script uses.
+
+    Subject / from / to / cc / bcc / date / message-id / in-reply-to /
+    htmlBody / body / attachments[] are read from the parsed message and
+    exposed as the attributes `build_meta` and the body / attachments
+    runners read. Lets `run_body`, `run_attachments` and
+    `render_thumbnail` handle `.msg` and `.eml` inputs without branching.
+    """
+
+    def __init__(self, source) -> None:
+        self.subject = (source.get("Subject") or "").strip()
+        self.sender = (source.get("From") or "").strip()
+        self.senderName = self.sender
+        self.to = source.get("To") or ""
+        self.cc = source.get("Cc") or ""
+        self.bcc = source.get("Bcc") or ""
+        date_str = source.get("Date") or ""
+        parsed_dt = None
+        if date_str:
+            try:
+                from email.utils import parsedate_to_datetime
+                parsed_dt = parsedate_to_datetime(date_str)
+            except (TypeError, ValueError):
+                parsed_dt = None
+        self.date = parsed_dt
+        self.parsedDate = parsed_dt
+        self.messageId = (source.get("Message-ID") or "").strip()
+        self.inReplyTo = (source.get("In-Reply-To") or "").strip()
+        html_part = source.get_body(preferencelist=("html",))
+        plain_part = source.get_body(preferencelist=("plain",))
+        self.htmlBody = html_part.get_content() if html_part is not None else None
+        self.html = self.htmlBody
+        self.body = plain_part.get_content() if plain_part is not None else ""
+
+        # Collect every non-body leaf, including inline images attached
+        # to the html body via `multipart/related` — Python's
+        # iter_attachments() treats those as part of the body group and
+        # skips them. The downstream `collect_attachments` /
+        # `run_attachments` code distinguishes inline vs. non-inline via
+        # the `cid` field, so we just need to surface BOTH here.
+        body_ids = {id(p) for p in (html_part, plain_part) if p is not None}
+        self.attachments = []
+        seen = set()
+        for part in source.walk():
+            if part.is_multipart():
+                continue
+            if id(part) in body_ids or id(part) in seen:
+                continue
+            seen.add(id(part))
+            payload = part.get_payload(decode=True)
+            if payload is None:
+                continue
+            name = part.get_filename() or "attachment"
+            cid_raw = part.get("Content-ID", "") or ""
+            cid = cid_raw.strip().strip("<>").lower()
+            self.attachments.append(_EmlAttachment(cid, name, bytes(payload)))
+
+
+def parse_eml(input_path: Path) -> _EmlMsg:
+    """Parse an RFC 5322 .eml file via Python's stdlib `email` module."""
+    import email
+    import email.policy
+    with open(input_path, "rb") as f:
+        raw = email.message_from_binary_file(f, policy=email.policy.default)
+    return _EmlMsg(raw)
+
+
+def open_message(input_path: Path):
+    """Dispatch to the correct parser based on filename extension."""
+    if _detect_format(input_path) == "eml":
+        return parse_eml(input_path)
+    try:
+        import extract_msg
+    except ImportError:
+        die("missing dependency: pip install extract-msg", 4)
+    return extract_msg.openMsg(str(input_path))
+
+
 def collect_attachments(msg, attach_dir: Path, source_uri: str,
                         allow_executables: bool, quarantine_log: list[dict]
                         ) -> tuple[list[dict], dict[str, str]]:
@@ -317,16 +446,11 @@ def build_meta(msg, has_attachments: bool, quarantined: list[dict]) -> dict:
 
 
 def run_body(args: argparse.Namespace) -> None:
-    try:
-        import extract_msg
-    except ImportError:
-        die("missing dependency: pip install extract-msg", 4)
-
     input_path = Path(args.input)
     attach_dir = attach_target_as_dir(args.attach_dir)
     attach_dir.mkdir(parents=True, exist_ok=True)
 
-    msg = extract_msg.openMsg(str(input_path))
+    msg = open_message(input_path)
     quarantined: list[dict] = []
     files, cid_map = collect_attachments(
         msg, attach_dir, args.source_uri, args.allow_executables, quarantined,
@@ -369,11 +493,7 @@ def render_thumbnail(input_path: Path, output_path: Path, size: int) -> None:
     `caption:` auto-wraps the text to fit the canvas; pointsize is chosen
     big enough to stay readable inside an attachment tile.
     """
-    try:
-        import extract_msg
-    except ImportError:
-        die("missing dependency: pip install extract-msg", 4)
-    msg = extract_msg.openMsg(str(input_path))
+    msg = open_message(input_path)
 
     subject = truncate(getattr(msg, "subject", "") or "(no subject)", 200)
 
@@ -402,16 +522,11 @@ def run_thumb(args: argparse.Namespace) -> None:
 
 
 def run_attachments(args: argparse.Namespace) -> None:
-    try:
-        import extract_msg
-    except ImportError:
-        die("missing dependency: pip install extract-msg", 4)
-
     input_path = Path(args.input)
     attach_dir, attach_prefix = split_attach_target_for_scan(args.attach_dir)
     attach_dir.mkdir(parents=True, exist_ok=True)
 
-    msg = extract_msg.openMsg(str(input_path))
+    msg = open_message(input_path)
     written: list[dict] = []
     quarantined: list[dict] = []
     for att in getattr(msg, "attachments", []) or []:

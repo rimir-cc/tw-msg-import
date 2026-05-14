@@ -7,6 +7,18 @@ rdt.order: 4
 
 ! Examples
 
+!! Example: dropping a Thunderbird `.eml`
+
+Thunderbird's drag-and-drop puts the original RFC 5322 source on the clipboard as an `.eml` File with `type=""` (Chrome strips the MIME — see `tw-outlook-drag-empty-mime` memory). file-upload's dropzone falls back to the file's extension and maps `.eml` → `message/rfc822`; that MIME is allow-listed from file-upload ≥ 0.1.24. The msg-import pipeline matches both `application/vnd.ms-outlook` and `message/rfc822`, so the same three-tiddler output tree appears:
+
+```
+team-update.eml                                      ← parent (type: message/rfc822)
+team-update.eml.email                                ← markdown + frontmatter
+team-update.eml.attachments/att_report.pdf           ← typed application/pdf, gets its own thumbnail
+```
+
+The `.eml` path uses Python's stdlib `email` module — no extra pip install needed. Inline images embedded as `multipart/related` are surfaced with their `Content-ID` intact so the existing `cid:` rewriting in the markdown body still works.
+
 !! Example: drop a meeting invite
 
 After dropping `kickoff.msg` into a `<$file-dropzone>`, the resulting `kickoff.msg.email` tiddler looks roughly like:

@@ -4,7 +4,7 @@ type: application/json
 
 {
   "name": "msg",
-  "match": ["application/vnd.ms-outlook"],
+  "match": ["application/vnd.ms-outlook", "message/rfc822"],
   "steps": [
     {
       "id": "thumb",

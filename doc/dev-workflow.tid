@@ -21,7 +21,7 @@ python3 -m venv .venv
 
 !! Smoke test without the wiki
 
-The Python script runs standalone — no need to drop a file through the UI to see what comes out:
+The Python script runs standalone — no need to drop a file through the UI to see what comes out. The same command handles `.msg` and `.eml` inputs (format auto-detected from filename extension):
 
 ```
 cd dev-wiki
@@ -60,9 +60,10 @@ When tweaking `extract.py`, run the standalone smoke test above. Drop the same `
 !! Files at a glance
 
 | !File | !What it does |
-| `pipelines/msg.tid` | Pipeline def — MIME match + 3 steps |
-| `runner-actions/msg.json` | Two whitelisted runner actions (snippet to merge) |
-| `scripts/extract.py` | Parses .msg via the `extract-msg` lib, calls pandoc, emits frontmatter+markdown. ''Don't rename to `extract_msg.py`'' — that shadows the library and `import extract_msg` resolves to the script itself, breaking the API |
+| `pipelines/msg.tid` | Pipeline def — MIME match list (`vnd.ms-outlook` + `rfc822`) + 4 steps |
+| `cascade/msg.tid` / `cascade/eml.tid` | ViewTemplateBodyFilter entries — `.msg` and `.eml` parents both dispatch to `body/msg` |
+| `runner-actions/msg.json` | Whitelisted runner actions (snippet to merge — handles both formats via the same script) |
+| `scripts/extract.py` | Format-dispatched extractor — `.msg` via the `extract-msg` lib, `.eml` via Python's stdlib `email` module. ''Don't rename to `extract_msg.py`'' — that shadows the library and `import extract_msg` resolves to the script itself, breaking the API |
 | `prompts/email-summary.tid` | LLM prompt template for the optional summary step |
 | `config/llm-summary.tid` | Toggle for the summary step (default: `no`) |
 | `config/quarantine-executables.tid` | Toggle for `.exe`/`.bat`/... blocking (default: `yes`) |

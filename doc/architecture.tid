@@ -9,21 +9,31 @@ rdt.order: 2
 
 !! Layers
 
-# ''file-upload'' (existing) — `<$file-dropzone>` posts the binary to `/api/file-upload-binary`. Server-side MIME-checks against `$:/config/rimir/file-upload/media-types`, computes content hash, routes by MIME via `helpers.js:getSubfolderForType` (msg-import adds `application/vnd.ms-outlook → email/`), writes to `files/email/<filename>.msg`.
-# ''file-pipeline'' (existing) — after upload, `widgets/dropzone.js:triggerPipeline()` posts to `/api/file-pipeline`. `pipeline-executor.js` matches `msg.tid` by MIME and runs its steps.
-# ''msg-import'' (this plugin) — contributes `pipelines/msg.tid` and the two runner-actions `convert-msg-body` / `extract-msg-attachments` (merged into `runner-actions.json`).
+# ''file-upload'' (existing) — `<$file-dropzone>` posts the binary to `/api/file-upload-binary`. Server-side MIME-checks against `$:/config/rimir/file-upload/media-types`, computes content hash, routes by MIME via `helpers.js:getSubfolderForType`. file-upload ≥ 0.1.20 routes `application/vnd.ms-outlook` to `email/`; ≥ 0.1.24 does the same for `message/rfc822` (`.eml`). Writes to `files/email/<filename>.msg` or `.eml`.
+# ''file-pipeline'' (existing) — after upload, `widgets/dropzone.js:triggerPipeline()` posts to `/api/file-pipeline`. `pipeline-executor.js` matches `msg.tid` by MIME — the pipeline's `match` list contains both `application/vnd.ms-outlook` and `message/rfc822`, so it runs for both formats.
+# ''msg-import'' (this plugin) — contributes `pipelines/msg.tid` and the runner-actions `convert-msg-body` / `extract-msg-attachments` / `msg-thumb` (merged into `runner-actions.json`).
 # ''runner'' (existing) — executes the Python extractor `scripts/extract.py`. Pipeline-executor passes `{{input}}` and `{{output}}` as auto-quoted absolute paths.
 # ''frontmatter'' (existing) — deserializes the `text/x-frontmattered-markdown` artifact tiddler's YAML header into tiddler fields; the save patch writes them back to `.md` on disk.
+
+!! Format dispatch in the extractor
+
+`scripts/extract.py` auto-detects the input format from the filename extension via `_detect_format(input_path)`:
+
+* ''`.eml`'' → `parse_eml(input_path)` — uses Python's stdlib `email` module (RFC 5322). Returns an `_EmlMsg` adapter that projects `email.message.EmailMessage` through the subset of the `extract-msg` `Message` API used by `run_body` / `run_attachments` / `render_thumbnail` (subject / sender / senderName / to / cc / bcc / date / parsedDate / messageId / inReplyTo / htmlBody / html / body / attachments[] with .cid / .longFilename / .shortFilename / .displayName / .data).
+* ''everything else'' (including `.msg`) → `extract_msg.openMsg(...)` — Outlook binary format, requires the `extract-msg` pip package (lazy import — only loaded when actually needed).
+
+The two paths produce structurally-identical objects, so the body / attachments / thumb runners are format-agnostic. The `.eml` path needs no extra pip install — only `pandoc` on `PATH` (which is required for both paths to convert the HTML body to markdown).
 
 !! Data flow
 
 ```
-drop .msg
-  └─▶ file-upload → files/email/<file>.msg + parent tiddler
-        └─▶ file-pipeline (MIME match)
-              ├─ convert       → captureStdout → .email tiddler (markdown + YAML)
-              ├─ attachments   → scanDir       → .attachments/<name> tiddlers
-              └─ summary (opt) → LLM           → .summary tiddler
+drop .msg or .eml
+  └─▶ file-upload → files/email/<file>.{msg|eml} + parent tiddler
+        └─▶ file-pipeline (MIME match: vnd.ms-outlook OR rfc822)
+              ├─ thumb (opt)   → magick caption: → .png in _generated/
+              ├─ convert       → captureStdout   → .email tiddler (markdown + YAML)
+              ├─ attachments   → scanDir         → .attachments/<name> tiddlers
+              └─ summary (opt) → LLM             → .summary tiddler
 ```
 
 !! On-disk layout for one email
@@ -52,9 +62,10 @@ From file-pipeline 0.1.11 the artifact also inherits the source's `pa.parent` fi
 
 !! Outlook-style inline attachments (`body/email.tid`, ≥ 0.1.6)
 
-The email's attachments are rendered at the ''top'' of the `.email` view. Two ViewTemplateBody cascades cooperate:
+The email's attachments are rendered at the ''top'' of the `.email` view. Three ViewTemplateBody cascades cooperate:
 
-* ''`cascade/msg`'' — matches `[type[application/vnd.ms-outlook]]` → dispatches to `body/msg` (the parent .msg thumb / expand toggle).
+* ''`cascade/msg`'' — matches `[type[application/vnd.ms-outlook]]` → dispatches to `body/msg` (the parent thumb / expand toggle).
+* ''`cascade/eml`'' (new in 0.1.7) — matches `[type[message/rfc822]]` → dispatches to the same `body/msg` template (the parent thumb / expand toggle works identically for `.eml` files; `body/msg` reads `<currentTiddler>addsuffix[.email]` to locate the artifact, which is format-agnostic).
 * ''`cascade/email`'' (new in 0.1.6) — matches `[type[text/x-frontmattered-markdown]has[msg-subject]]` → dispatches to `body/email`.
 
 `body/email` is the single source of truth for email rendering:
@@ -75,9 +86,10 @@ This mirrors how a mail client renders attachments — the email is one box on t
 
 !! ViewTemplateBody cascade
 
-Parent `.msg` tiddlers have `_canonical_uri` pointing at the binary on disk; TW's default body view shows the "Trying to load external content" fallback because no built-in viewer handles `application/vnd.ms-outlook`. msg-import 0.1.3 ships:
+Parent `.msg` / `.eml` tiddlers have `_canonical_uri` pointing at the binary on disk; TW's default body view shows the "Trying to load external content" fallback because no built-in viewer handles `application/vnd.ms-outlook` or `message/rfc822`. msg-import 0.1.3 (+ 0.1.7 for `.eml`) ships:
 
 * ''`$:/plugins/rimir/msg-import/cascade/msg`'' — tagged `$:/tags/ViewTemplateBodyFilter`, `list-before` the file-upload `cascade/thumbnail`. Matches on `type == application/vnd.ms-outlook` and dispatches to a custom body template.
+* ''`$:/plugins/rimir/msg-import/cascade/eml`'' — same shape, matches on `type == message/rfc822`, dispatches to the same `body/msg` template (the template is format-agnostic — it resolves the `.email` artifact via `<currentTiddler>addsuffix[.email]`, which works for both `.msg` and `.eml` parents).
 * ''`$:/plugins/rimir/msg-import/body/msg`'' — two-mode view sharing the file-upload state tiddler `$:/state/file-upload/view-mode/<title>`:
 ** ''thumb'' (default): renders `_thumbnail_uri` as a small image; click switches to "full".
 ** ''full'': transcludes the sibling `<title>.email` tiddler's body (markdown with frontmatter fields). Includes a back-to-thumb button.

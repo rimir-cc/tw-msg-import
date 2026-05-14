@@ -9,11 +9,11 @@ rdt.order: 5
 
 !!! The drop is rejected with "type not allowed"
 
-Check that `application/vnd.ms-outlook` is in `$:/config/rimir/file-upload/media-types`. Some browsers report `.msg` files as `application/octet-stream` — file-upload won't accept that. If this happens, open the `.msg` via the file picker in the dropzone (which uses the OS's MIME guess and usually gives the right type).
+Check that `application/vnd.ms-outlook` (`.msg`) and `message/rfc822` (`.eml`) are both in `$:/config/rimir/file-upload/media-types` — file-upload ≥ 0.1.24 ships both by default. Some browsers report `.msg` / `.eml` files as `application/octet-stream` — the dropzone's extension-sniff fallback (file-upload ≥ 0.1.20) catches `.msg` and `.eml` then, but if that's also failing, open the file via the file picker in the dropzone (which uses the OS's MIME guess and usually gives the right type).
 
 !!! Nothing happens after drop / the `.email` tiddler is not created
 
-# Confirm `python3` is on the server's `PATH` and `extract-msg` is installed (`pip show extract-msg`).
+# Confirm `python3` is on the server's `PATH`. For `.msg` files, also confirm `extract-msg` is installed (`pip show extract-msg`) — `.eml` files don't need it (stdlib only).
 # Confirm `pandoc --version` works.
 # Confirm the two runner-actions are in `dev-wiki/runner-actions.json` — server must be restarted after merging.
 # Check the server log for the line `[file-pipeline] Executing: python3 plugins/rimir/msg-import/...` and any `Step 'convert' failed` lines below.
@@ -46,6 +46,10 @@ Each non-inline attachment is processed sequentially by its MIME-matched pipelin
 
 Yes — from file-upload ≥ 0.1.21, the artifact cascade is transitive. Deleting the parent `.msg` removes the `.email` tiddler, every `.attachments/*` tiddler, every nested pipeline product (PDF thumbnails, extractions, attached `.msg`'s own `.email`, etc.), and the entire `_derived/<basename>/` directory tree. A confirm modal pops first showing exactly what will be removed plus any tiddlers that link to anything in the cascade. Disable the modal via `$:/config/rimir/file-upload/confirm-deletes`.
 
-!!! Can I `.eml` import?
+!!! Can I drop `.eml` files?
 
-Not in this plugin. The pipeline only matches `application/vnd.ms-outlook`. A sibling `eml-import` plugin would mirror the same shape but use `mailparser` or Python's `email.parser`. Out of scope for v0.1.
+Yes — from 0.1.7 the pipeline matches both `application/vnd.ms-outlook` (`.msg`) and `message/rfc822` (`.eml`). `.eml` files are parsed via Python's stdlib `email` module (no `extract-msg` dependency for that path); the output tiddler tree is identical to a `.msg` drop, so all downstream rendering (cascade, body, attachment row, nested pipelines for PDF attachments) works the same way. Thunderbird's drag-and-drop is fully supported — file-upload's dropzone falls back to the file extension when Chrome strips the MIME hint.
+
+!!! What's the difference between dropping `.msg` and `.eml`?
+
+Output-wise: nothing. Same `.email` artifact shape, same attachment behaviour, same cascade. Implementation-wise: `.msg` files go through the `extract-msg` library (Outlook binary format, third-party pip), `.eml` files go through Python's stdlib `email` module (RFC 5322 plain text, no extra install). Dispatch happens inside `scripts/extract.py:_detect_format()` based on filename extension.

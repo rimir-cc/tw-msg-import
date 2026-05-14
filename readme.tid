@@ -3,13 +3,15 @@ type: text/vnd.tiddlywiki
 
 ! MSG Import
 
-Drop Outlook `.msg` files into a `<$file-dropzone>` and get a clean markdown tiddler with YAML frontmatter, plus the attachments as artifact child tiddlers.
+Drop Outlook `.msg` ''or'' RFC 5322 `.eml` files into a `<$file-dropzone>` and get a clean markdown tiddler with YAML frontmatter, plus the attachments as artifact child tiddlers.
 
-The original `.msg` blob is preserved as the canonical asset under `files/email/`, so the email is still re-downloadable.
+The original blob is preserved as the canonical asset under `files/email/`, so the email is still re-downloadable.
+
+Format dispatch is by filename extension: `.msg` is parsed via the `extract-msg` Python library (Outlook binary format), `.eml` via Python's stdlib `email` module (RFC 5322 plain text). Both paths produce the same output tiddler shape and downstream rendering — same `.email` artifact, same attachment row, same cascade behaviour.
 
 !! Key Features
 
-* ''Drag-and-drop import'' — works in any `<$file-dropzone>` once the MIME type is allow-listed in file-upload
+* ''Drag-and-drop import'' — works in any `<$file-dropzone>` for both `application/vnd.ms-outlook` (`.msg`) and `message/rfc822` (`.eml`); both MIME types are allow-listed by file-upload ≥ 0.1.24
 * ''Frontmatter metadata'' — subject, from, to, cc, bcc, date, message-id, in-reply-to extracted into YAML fields (handled by `rimir/frontmatter` for round-trip)
 * ''HTML → markdown'' — email body converted via pandoc (no shell, no filename arg → no injection)
 * ''Attachments are first-class'' — each non-inline attachment becomes a child tiddler with `_artifact_source` linking back to the parent .msg, typed by its filename extension (PDF, DOCX, .msg, …) and AUTOMATICALLY routed through its own MIME-matched pipeline. A PDF attachment gets the PDF pipeline (thumbnail + text extraction); an attached `.msg` recursively produces its own `.email` and processes its own attachments. Cycle protection via per-recursion `seen` map of URIs
@@ -20,12 +22,12 @@ The original `.msg` blob is preserved as the canonical asset under `files/email/
 
 !! Prerequisites
 
-* ''rimir/file-upload'' — drop handling and the `application/vnd.ms-outlook` MIME entry (shipped in file-upload ≥ 0.1.20)
-* ''rimir/file-pipeline'' — pipeline executor; this plugin contributes one pipeline tiddler
-* ''rimir/runner'' — the two runner actions live in `dev-wiki/runner-actions.json`
+* ''rimir/file-upload'' — drop handling, the `application/vnd.ms-outlook` MIME entry (≥ 0.1.20) and the `message/rfc822` MIME entry (≥ 0.1.24)
+* ''rimir/file-pipeline'' — pipeline executor; this plugin contributes one pipeline tiddler matching both MIME types
+* ''rimir/runner'' — the runner actions live in `dev-wiki/runner-actions.json`
 * ''rimir/frontmatter'' — `text/x-frontmattered-markdown` deserializer and save-patch
-* ''Python 3'' with `extract-msg` (`pip install extract-msg`)
-* ''pandoc'' on `PATH`
+* ''Python 3'' — stdlib only for `.eml` parsing; `pip install extract-msg` is needed only if you intend to drop `.msg` files
+* ''pandoc'' on `PATH` — used by both formats to convert the HTML body to markdown
 
 !! Install
 
@@ -37,10 +39,10 @@ The original `.msg` blob is preserved as the canonical asset under `files/email/
 
 !! Output Shape
 
-For an imported `meeting.msg`, three tiddler groups are created:
+For an imported `meeting.msg` (or `meeting.eml`), three tiddler groups are created:
 
-* `meeting.msg` — the original binary, `type: application/vnd.ms-outlook`, with `_canonical_uri = /files/email/meeting.msg`
+* `meeting.msg` — the original binary, `type: application/vnd.ms-outlook` (or `message/rfc822` for `.eml`), with `_canonical_uri = /files/email/meeting.msg`
 * `meeting.msg.email` — the markdown body, `type: text/x-frontmattered-markdown`; frontmatter carries the metadata
 * `meeting.msg.attachments/<filename>` — one tiddler per attachment, each with `_artifact_source = meeting.msg` and `_artifact_type = attachment`
 
-Renaming `meeting.msg` cascades through all three groups via the file-upload artifact cascade. Same for delete.
+Renaming the parent cascades through all three groups via the file-upload artifact cascade. Same for delete.

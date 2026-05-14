@@ -7,16 +7,18 @@ rdt.order: 1
 
 ! Overview
 
-`rimir/msg-import` turns dropped Outlook `.msg` files into clean markdown tiddlers with YAML frontmatter. It is a configuration-only plugin: no server JS modules of its own, no widgets — all the heavy lifting is done by plugins that were already in the wiki:
+`rimir/msg-import` turns dropped Outlook `.msg` ''or'' RFC 5322 `.eml` files into clean markdown tiddlers with YAML frontmatter. It is a configuration-only plugin: no server JS modules of its own, no widgets — all the heavy lifting is done by plugins that were already in the wiki:
 
 * ''rimir/file-upload'' handles the drop, content-hash dedup, and stores the binary under `files/email/`.
-* ''rimir/file-pipeline'' auto-runs the bundled pipeline when the MIME type is `application/vnd.ms-outlook`.
+* ''rimir/file-pipeline'' auto-runs the bundled pipeline when the MIME type is `application/vnd.ms-outlook` or `message/rfc822`.
 * ''rimir/runner'' executes the Python extractor as a whitelisted command from `runner-actions.json`.
 * ''rimir/frontmatter'' deserializes the resulting `.md` body back into tiddler fields on save / reload.
 
+The extractor (`scripts/extract.py`) auto-detects the format from the filename extension: `.msg` is parsed via the `extract-msg` library, `.eml` via Python's stdlib `email` module. Both paths emit the same frontmatter + markdown shape, so all downstream behaviour (cascade, body rendering, attachment row) is identical.
+
 !! What you get per drop
 
-For a dropped `meeting.msg`, three tiddler groups appear:
+For a dropped `meeting.msg` (or `meeting.eml`), three tiddler groups appear:
 
 * `meeting.msg` — the original binary, served via `_canonical_uri`
 * `meeting.msg.email` — the markdown body, `type: text/x-frontmattered-markdown`, with all email metadata in YAML frontmatter
@@ -29,7 +31,7 @@ Inline images (`cid:` refs in HTML body) are saved as static files under `files/
 ```json
 {
   "name": "msg",
-  "match": ["application/vnd.ms-outlook"],
+  "match": ["application/vnd.ms-outlook", "message/rfc822"],
   "steps": [
     { "id": "convert",     "action": "convert-msg-body",       "captureStdout": true,  ... },
     { "id": "attachments", "action": "extract-msg-attachments","scanDir": true,       ... },

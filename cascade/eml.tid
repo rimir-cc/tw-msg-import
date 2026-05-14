@@ -1,0 +1,8 @@
+created: 20260514000000000
+list-before: $:/plugins/rimir/file-upload/cascade/thumbnail
+modified: 20260514000000000
+tags: $:/tags/ViewTemplateBodyFilter
+title: $:/plugins/rimir/msg-import/cascade/eml
+type: text/vnd.tiddlywiki
+
+[get[type]match[message/rfc822]then[$:/plugins/rimir/msg-import/body/msg]]

@@ -7,6 +7,14 @@ rdt.order: 6
 
 ! Reference
 
+!! Supported input formats
+
+|!Format |!MIME |!Parser |!Pip dependency |
+|`.msg` |`application/vnd.ms-outlook` |`extract-msg` library |`pip install extract-msg` |
+|`.eml` |`message/rfc822` |Python stdlib `email` module |none |
+
+`scripts/extract.py:_detect_format(input_path)` dispatches on filename extension. Both paths produce the same frontmatter / markdown / attachments tree, so the cascade + body templates downstream are format-agnostic.
+
 !! Frontmatter fields produced
 
 | !Field | !Type | !Notes |
@@ -60,12 +68,17 @@ rdt.order: 6
 !! Python extractor CLI
 
 ```
-extract_msg.py --mode={body|attachments}
-               --input <abs-path-to-.msg>
-               --attach-dir <dir-or-prefix-path>
-               [--allow-executables]
+extract.py --mode={body|attachments|thumb}
+           --input <abs-path-to-.msg-or-.eml>
+           --attach-dir <dir-or-prefix-path>      # body / attachments modes
+           --source-uri <canonical-uri>           # body / attachments modes
+           --output <abs-path-to-png>             # thumb mode
+           [--size <px>]                          # thumb mode (default 200)
+           [--allow-executables]
 ```
 
 * `--mode=body` writes inline-image files (cid:) to `--attach-dir` and emits frontmatter+markdown to stdout.
 * `--mode=attachments` writes non-inline attachments to `--attach-dir` and emits a JSON summary to stdout.
+* `--mode=thumb` renders a small PNG previewing the email subject via ImageMagick `caption:`.
 * `--attach-dir` is interpreted as a directory when it ends with `/` (or already exists as a dir), otherwise as a `<dir>/<filename-prefix>` pair.
+* Format dispatch is by filename extension on `--input` — `.eml` uses Python's stdlib `email` module, anything else routes through `extract-msg`.

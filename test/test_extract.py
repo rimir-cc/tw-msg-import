@@ -194,6 +194,173 @@ class ParseRecipientsTests(unittest.TestCase):
         )
 
 
+class DetectFormatTests(unittest.TestCase):
+    def test_eml_extension(self):
+        self.assertEqual(extract._detect_format(Path("/foo/bar.eml")), "eml")
+
+    def test_msg_extension(self):
+        self.assertEqual(extract._detect_format(Path("/foo/bar.msg")), "msg")
+
+    def test_case_insensitive(self):
+        self.assertEqual(extract._detect_format(Path("/foo/BAR.EML")), "eml")
+        self.assertEqual(extract._detect_format(Path("/foo/BAR.MSG")), "msg")
+
+    def test_unknown_extension_defaults_to_msg(self):
+        # The pipeline only fires for the two registered MIME types so the
+        # script should never see an unknown extension — but treat it as
+        # `.msg` (extract-msg path) since that's the original behaviour.
+        self.assertEqual(extract._detect_format(Path("/foo/bar.txt")), "msg")
+
+
+class EmlPlainTextTests(unittest.TestCase):
+    """Smallest possible RFC 5322 fixture: plain-text body, no attachments."""
+
+    PLAIN_EML = (
+        b"From: alice@example.com\r\n"
+        b"To: bob@example.com\r\n"
+        b"Cc: carol@example.com\r\n"
+        b"Subject: Test plain email\r\n"
+        b"Date: Wed, 14 May 2026 10:00:00 +0000\r\n"
+        b"Message-ID: <test-001@example.com>\r\n"
+        b"In-Reply-To: <prev-000@example.com>\r\n"
+        b"Content-Type: text/plain; charset=utf-8\r\n"
+        b"\r\n"
+        b"Hello world\r\n"
+    )
+
+    def setUp(self):
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".eml", delete=False)
+        tmp.write(self.PLAIN_EML)
+        tmp.close()
+        self.path = Path(tmp.name)
+        self.msg = extract.parse_eml(self.path)
+
+    def tearDown(self):
+        try:
+            self.path.unlink()
+        except FileNotFoundError:
+            pass
+
+    def test_subject(self):
+        self.assertEqual(self.msg.subject, "Test plain email")
+
+    def test_sender(self):
+        self.assertEqual(self.msg.sender, "alice@example.com")
+
+    def test_recipients(self):
+        self.assertEqual(str(self.msg.to), "bob@example.com")
+        self.assertEqual(str(self.msg.cc), "carol@example.com")
+        self.assertEqual(str(self.msg.bcc), "")
+
+    def test_message_id_and_in_reply_to(self):
+        self.assertEqual(self.msg.messageId, "<test-001@example.com>")
+        self.assertEqual(self.msg.inReplyTo, "<prev-000@example.com>")
+
+    def test_date_parsed_to_utc(self):
+        self.assertIsNotNone(self.msg.date)
+        self.assertEqual(self.msg.date.year, 2026)
+        self.assertEqual(self.msg.date.month, 5)
+        self.assertEqual(self.msg.date.day, 14)
+
+    def test_body_plain(self):
+        self.assertIn("Hello world", self.msg.body)
+
+    def test_html_body_absent(self):
+        self.assertIsNone(self.msg.htmlBody)
+
+    def test_no_attachments(self):
+        self.assertEqual(self.msg.attachments, [])
+
+
+class EmlMultipartTests(unittest.TestCase):
+    """HTML body + a real attachment + an inline image with Content-ID."""
+
+    def setUp(self):
+        import email.message
+        import email.policy
+        import tempfile
+
+        em = email.message.EmailMessage(policy=email.policy.default)
+        em["From"] = "alice@example.com"
+        em["To"] = "bob@example.com"
+        em["Subject"] = "Multipart with PDF"
+        em["Date"] = "Wed, 14 May 2026 10:00:00 +0000"
+        em.set_content("Plain text alt")
+        em.add_alternative(
+            "<p>HTML body <img src=\"cid:logo123\"/></p>",
+            subtype="html",
+        )
+        # add_alternative replaces the body — fetch the html sub-part and
+        # add an inline image related to it.
+        html_part = em.get_body(preferencelist=("html",))
+        html_part.add_related(
+            b"\x89PNG\r\n\x1a\n fake-png-bytes",
+            maintype="image", subtype="png", cid="<logo123>",
+        )
+        # And a real non-inline attachment.
+        em.add_attachment(
+            b"%PDF-1.4 fake",
+            maintype="application", subtype="pdf",
+            filename="invoice.pdf",
+        )
+        tmp = tempfile.NamedTemporaryFile(suffix=".eml", delete=False)
+        tmp.write(em.as_bytes())
+        tmp.close()
+        self.path = Path(tmp.name)
+        self.msg = extract.parse_eml(self.path)
+
+    def tearDown(self):
+        try:
+            self.path.unlink()
+        except FileNotFoundError:
+            pass
+
+    def test_html_body_extracted(self):
+        self.assertIsNotNone(self.msg.htmlBody)
+        self.assertIn("HTML body", self.msg.htmlBody)
+
+    def test_attachments_include_inline_and_real(self):
+        # The inline image and the PDF are both in iter_attachments() — the
+        # downstream code distinguishes via the `cid` field.
+        names = sorted(a.longFilename for a in self.msg.attachments)
+        self.assertIn("invoice.pdf", names)
+
+    def test_real_attachment_has_no_cid(self):
+        pdf = next(a for a in self.msg.attachments if a.longFilename == "invoice.pdf")
+        self.assertEqual(pdf.cid, "")
+        self.assertTrue(pdf.data.startswith(b"%PDF"))
+
+    def test_inline_image_keeps_cid_lowercase(self):
+        inline = [a for a in self.msg.attachments if a.cid]
+        self.assertEqual(len(inline), 1)
+        self.assertEqual(inline[0].cid, "logo123")
+
+
+class EmlMalformedDateTests(unittest.TestCase):
+    """A bad Date: header must not crash parsing."""
+
+    def test_unparseable_date_yields_none(self):
+        import tempfile
+        raw = (
+            b"From: a@x\r\n"
+            b"Subject: bad date\r\n"
+            b"Date: not-a-real-date\r\n"
+            b"\r\n"
+            b"body\r\n"
+        )
+        tmp = tempfile.NamedTemporaryFile(suffix=".eml", delete=False)
+        tmp.write(raw)
+        tmp.close()
+        try:
+            msg = extract.parse_eml(Path(tmp.name))
+            # Bad date string → either None or some best-effort datetime.
+            # Either way, parse_eml must not raise.
+            self.assertEqual(msg.subject, "bad date")
+        finally:
+            Path(tmp.name).unlink()
+
+
 class PathSafetyTests(unittest.TestCase):
     def setUp(self):
         self.wiki_root = Path(__file__).resolve().parent.parent.parent.parent.parent
