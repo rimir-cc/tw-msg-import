@@ -272,18 +272,22 @@ class _EmlAttachment:
 
     Exposes the subset used downstream: `.cid` (lowercase, brackets
     stripped), `.longFilename` / `.shortFilename` / `.displayName` (all
-    the same string here — RFC 5322 doesn't have the Outlook split), and
-    `.data` (bytes).
+    the same string here — RFC 5322 doesn't have the Outlook split),
+    `.data` (bytes), and `.hidden` — the inline-vs-real flag that mirrors
+    extract-msg's `PR_ATTACHMENT_HIDDEN`. Inline parts (those with a
+    Content-ID, or marked `Content-Disposition: inline`) get
+    `hidden=True`; regular attachments get `hidden=False`.
     """
 
-    __slots__ = ("cid", "longFilename", "shortFilename", "displayName", "data")
+    __slots__ = ("cid", "longFilename", "shortFilename", "displayName", "data", "hidden")
 
-    def __init__(self, cid: str, name: str, data: bytes) -> None:
+    def __init__(self, cid: str, name: str, data: bytes, hidden: bool) -> None:
         self.cid = cid
         self.longFilename = name
         self.shortFilename = name
         self.displayName = name
         self.data = data
+        self.hidden = hidden
 
 
 class _EmlMsg:
@@ -343,7 +347,13 @@ class _EmlMsg:
             name = part.get_filename() or "attachment"
             cid_raw = part.get("Content-ID", "") or ""
             cid = cid_raw.strip().strip("<>").lower()
-            self.attachments.append(_EmlAttachment(cid, name, bytes(payload)))
+            # Mirror extract_msg's PR_ATTACHMENT_HIDDEN: inline parts hide
+            # themselves from the user's attachment list. RFC 5322 marks
+            # those via Content-ID (multipart/related body group) or
+            # explicit `Content-Disposition: inline`.
+            disposition = (part.get("Content-Disposition") or "").strip().lower()
+            is_inline_part = bool(cid) or disposition.startswith("inline")
+            self.attachments.append(_EmlAttachment(cid, name, bytes(payload), is_inline_part))
 
 
 def parse_eml(input_path: Path) -> _EmlMsg:
@@ -366,10 +376,26 @@ def open_message(input_path: Path):
     return extract_msg.openMsg(str(input_path))
 
 
+def is_inline_attachment(att) -> bool:
+    """True if `att` is an inline image (embedded in the HTML body), false if
+    it's a user-facing attachment.
+
+    Authority: `PR_ATTACHMENT_HIDDEN` (extract_msg's `.hidden`) for `.msg`,
+    mirrored onto our `_EmlAttachment.hidden` for `.eml`. The historical
+    cid-based check is unreliable for `.msg`: Outlook (notably recent
+    builds) stamps a Content-ID on regular attachments too, so a real PDF
+    attachment can carry both `hidden=False` AND a non-empty `.cid`.
+    Using `hidden` keeps body mode (writes inline images for HTML cid:
+    rewriting) and attachments mode (writes everything else) cleanly
+    separated.
+    """
+    return bool(getattr(att, "hidden", False))
+
+
 def collect_attachments(msg, attach_dir: Path, source_uri: str,
                         allow_executables: bool, quarantine_log: list[dict]
                         ) -> tuple[list[dict], dict[str, str]]:
-    """Walk msg.attachments for inline images (those with a CID).
+    """Walk msg.attachments for inline images (hidden=True with a CID).
 
     Writes inline images only. Real attachments are handled in
     attachments mode. Returns (files_written, cid_to_url).
@@ -377,7 +403,11 @@ def collect_attachments(msg, attach_dir: Path, source_uri: str,
     written: list[dict] = []
     cid_map: dict[str, str] = {}
     for att in getattr(msg, "attachments", []) or []:
+        if not is_inline_attachment(att):
+            continue
         cid = (getattr(att, "cid", "") or "").strip().strip("<>").lower()
+        # Inline parts without a CID can't be referenced from the HTML body
+        # — nothing useful to do with them here.
         if not cid:
             continue
         raw_name = (
@@ -456,7 +486,7 @@ def run_body(args: argparse.Namespace) -> None:
         msg, attach_dir, args.source_uri, args.allow_executables, quarantined,
     )
     has_real_attachments = any(
-        not ((getattr(a, "cid", "") or "").strip().strip("<>"))
+        not is_inline_attachment(a)
         for a in (getattr(msg, "attachments", []) or [])
     )
     html = getattr(msg, "htmlBody", None) or getattr(msg, "html", None)
@@ -530,9 +560,11 @@ def run_attachments(args: argparse.Namespace) -> None:
     written: list[dict] = []
     quarantined: list[dict] = []
     for att in getattr(msg, "attachments", []) or []:
-        cid = (getattr(att, "cid", "") or "").strip().strip("<>").lower()
-        # Inline images are handled in body mode; skip here.
-        if cid:
+        # Inline images are handled in body mode; skip here. The truthy
+        # signal is `hidden`, not `cid` — Outlook stamps Content-IDs on
+        # regular attachments too, so checking cid alone would silently
+        # drop real PDFs/etc.
+        if is_inline_attachment(att):
             continue
         raw_name = (
             getattr(att, "longFilename", None)

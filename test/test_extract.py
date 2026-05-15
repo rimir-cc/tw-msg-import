@@ -336,6 +336,103 @@ class EmlMultipartTests(unittest.TestCase):
         self.assertEqual(len(inline), 1)
         self.assertEqual(inline[0].cid, "logo123")
 
+    def test_inline_image_marked_hidden(self):
+        # PR_ATTACHMENT_HIDDEN equivalent — set on parts with Content-ID so
+        # downstream `is_inline_attachment` returns True without needing the
+        # cid field.
+        inline = [a for a in self.msg.attachments if a.cid]
+        self.assertTrue(inline[0].hidden)
+        self.assertTrue(extract.is_inline_attachment(inline[0]))
+
+    def test_real_pdf_attachment_not_hidden(self):
+        pdf = next(a for a in self.msg.attachments if a.longFilename == "invoice.pdf")
+        self.assertFalse(pdf.hidden)
+        self.assertFalse(extract.is_inline_attachment(pdf))
+
+
+class InlineAttachmentDetectionTests(unittest.TestCase):
+    """`is_inline_attachment` is the single source of truth for the
+    inline-vs-real split in body / attachments modes.
+
+    Outlook stamps a Content-ID on regular attachments too (modern builds),
+    so cid alone is unreliable for `.msg`. extract_msg's `.hidden` property
+    maps to `PR_ATTACHMENT_HIDDEN` (PT_BOOLEAN 0x7FFE000B) — TRUE only for
+    inline images. We rely on that flag for both backends.
+    """
+
+    def test_returns_true_when_hidden_true(self):
+        att = extract._EmlAttachment(cid="logo", name="img.png", data=b"x", hidden=True)
+        self.assertTrue(extract.is_inline_attachment(att))
+
+    def test_returns_false_when_hidden_false(self):
+        att = extract._EmlAttachment(cid="", name="invoice.pdf", data=b"x", hidden=False)
+        self.assertFalse(extract.is_inline_attachment(att))
+
+    def test_msg_style_pdf_with_stamped_cid_still_real(self):
+        """Regression for the .msg-only failure mode: Outlook puts a CID on a
+        real PDF attachment. cid is non-empty BUT hidden=False — the PDF
+        must surface as a real attachment, not get skipped as inline.
+        """
+        att = extract._EmlAttachment(
+            cid="part1.abc@example.com",
+            name="invoice.pdf",
+            data=b"%PDF-1.4",
+            hidden=False,
+        )
+        self.assertFalse(extract.is_inline_attachment(att))
+
+    def test_extract_msg_lookalike_uses_hidden(self):
+        """Duck-typed object missing the cid field but exposing `hidden` —
+        mirrors how extract_msg's Attachment class shows up in practice.
+        """
+        class _ExtractMsgLookalike:
+            hidden = True
+
+        att = _ExtractMsgLookalike()
+        self.assertTrue(extract.is_inline_attachment(att))
+
+    def test_missing_hidden_defaults_to_real(self):
+        """Defensive fallback: an object missing `hidden` entirely is treated
+        as a real attachment (safer to over-surface than to silently drop).
+        """
+        class _Bare:
+            pass
+
+        self.assertFalse(extract.is_inline_attachment(_Bare()))
+
+
+class EmlInlineDispositionTests(unittest.TestCase):
+    """`Content-Disposition: inline` (without Content-ID) is also a valid
+    way to mark inline parts in RFC 5322. We honour it.
+    """
+
+    def test_explicit_inline_disposition_marks_hidden(self):
+        import email.message
+        import email.policy
+        import tempfile
+
+        em = email.message.EmailMessage(policy=email.policy.default)
+        em["From"] = "a@x"
+        em["Subject"] = "inline disposition"
+        em.set_content("plain")
+        em.add_attachment(
+            b"\x89PNG fake",
+            maintype="image", subtype="png",
+            filename="banner.png",
+            disposition="inline",
+        )
+        tmp = tempfile.NamedTemporaryFile(suffix=".eml", delete=False)
+        tmp.write(em.as_bytes())
+        tmp.close()
+        try:
+            msg = extract.parse_eml(Path(tmp.name))
+            banner = next(
+                a for a in msg.attachments if a.longFilename == "banner.png"
+            )
+            self.assertTrue(banner.hidden)
+        finally:
+            Path(tmp.name).unlink()
+
 
 class EmlMalformedDateTests(unittest.TestCase):
     """A bad Date: header must not crash parsing."""
